@@ -1,0 +1,24 @@
+.o_todoitem_widget {
+    padding: 12px;
+    border: 1px solid var(--border-color, #e0e0e0);
+    border-radius: 6px;
+    background: var(--bg, #ffffff);
+    display: inline-block;
+    max-width: 420px;
+}
+
+.o_todoitem_widget .o-widget-loading {
+    padding: 10px;
+    color: var(--text-muted, #666);
+}
+
+.o_todoitem_widget .o-widget-body p {
+    margin: 6px 0;
+}
+
+.o_todoitem_widget input[type="text"] {
+    width: 100%;
+    padding: 6px 8px;
+    border-radius: 4px;
+    border: 1px solid var(--border-color, #ccc);
+}

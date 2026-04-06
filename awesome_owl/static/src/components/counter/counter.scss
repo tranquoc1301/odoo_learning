@@ -1,0 +1,57 @@
+.counter {
+  padding: 1.25rem 1.5rem;
+  background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+  border: 1px solid #dee2e6;
+  border-radius: 12px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  min-width: 220px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  transition: box-shadow 0.2s ease, transform 0.15s ease;
+
+  &:hover {
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+    transform: translateY(-1px);
+  }
+
+  .counter-value {
+    font-size: 1.5rem;
+    font-weight: 600;
+    color: #212529;
+    font-variant-numeric: tabular-nums;
+    min-width: 2ch;
+    text-align: center;
+  }
+
+  .counter-label {
+    font-size: 0.875rem;
+    color: #6c757d;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-weight: 500;
+  }
+
+  .btn-increment {
+    padding: 0.5rem 1rem;
+    font-size: 0.875rem;
+    font-weight: 500;
+    border: none;
+    border-radius: 8px;
+    background: linear-gradient(135deg, #0d6efd 0%, #0b5ed7 100%);
+    color: #fff;
+    cursor: pointer;
+    transition: background 0.2s ease, transform 0.1s ease;
+    white-space: nowrap;
+
+    &:hover {
+      background: linear-gradient(135deg, #0b5ed7 0%, #0a58ca 100%);
+      transform: scale(1.03);
+    }
+
+    &:active {
+      transform: scale(0.97);
+    }
+  }
+}

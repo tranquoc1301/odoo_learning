@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<odoo>
+    <template id="report_property_document">
+        <t t-call="web.html_container">
+            <t t-foreach="docs" t-as="property">
+                <t t-call="web.external_layout">
+                    <div class="page">
+                        <div class="oe_structure"/>
+
+                        <h2 class="mt32">Property Details</h2>
+                        <table class="table table-sm">
+                            <tr>
+                                <th><strong>Property Name</strong></th>
+                                <td><span t-field="property.name"/></td>
+                                <th><strong>Postcode</strong></th>
+                                <td><span t-field="property.postcode"/></td>
+                            </tr>
+                            <tr>
+                                <th><strong>Bedrooms</strong></th>
+                                <td><span t-field="property.bedrooms"/></td>
+                                <th><strong>Living Area</strong></th>
+                                <td><span t-field="property.living_area"/> sqm</td>
+                            </tr>
+                            <tr>
+                                <th><strong>Garden</strong></th>
+                                <td><span t-field="property.garden"/></td>
+                                <th><strong>Garden Area</strong></th>
+                                <td><span t-field="property.garden_area"/> sqm</td>
+                            </tr>
+                            <tr t-if="property.garden_orientation">
+                                <th><strong>Garden Orientation</strong></th>
+                                <td><span t-field="property.garden_orientation"/></td>
+                                <th><strong>Total Area</strong></th>
+                                <td><span t-field="property.total_area"/> sqm</td>
+                            </tr>
+                            <tr>
+                                <th><strong>Facades</strong></th>
+                                <td><span t-field="property.facades"/></td>
+                                <th><strong>Garage</strong></th>
+                                <td><span t-field="property.garage"/></td>
+                            </tr>
+                            <tr>
+                                <th><strong>Expected Price</strong></th>
+                                <td><span t-field="property.expected_price"/></td>
+                                <th><strong>Selling Price</strong></th>
+                                <td><span t-field="property.selling_price"/></td>
+                            </tr>
+                            <tr>
+                                <th><strong>State</strong></th>
+                                <td><span t-field="property.state"/></td>
+                                <th><strong>Availability Date</strong></th>
+                                <td><span t-field="property.date_availability"/></td>
+                            </tr>
+                        </table>
+
+                        <div t-if="property.description">
+                            <h4>Description</h4>
+                            <p><span t-field="property.description"/></p>
+                        </div>
+
+                        <div class="oe_structure"/>
+                    </div>
+                </t>
+            </t>
+        </t>
+    </template>
+
+    <template id="report_property">
+        <t t-call="web.html_container">
+            <t t-call="estate.report_property_document"/>
+        </t>
+    </template>
+</odoo>

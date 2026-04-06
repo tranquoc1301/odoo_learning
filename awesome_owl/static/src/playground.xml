@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<templates xml:space="preserve">
+    <t t-name="awesome_owl.playground">
+        <div class="p-3 d-grid gap-2">
+            <Card title="'Card 1'" content="html"/>
+
+            <Counter callback.bind="incrementSum"/>
+            <Counter callback.bind="incrementSum"/>
+
+            <h3>Sum: <t t-esc="sum.value"/></h3>
+        </div>
+    </t>
+</templates>
