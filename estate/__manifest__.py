@@ -13,5 +13,9 @@
         'views/estate_property_offer_views.xml',
         'report/estate_property_reports.xml',
         'report/estate_property_templates.xml',
+    ],
+    'test': [
+        'tests/test_estate.py',
+        'tests/test_property_offer.py',
     ]
 }
