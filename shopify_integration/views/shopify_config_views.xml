@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <record id="view_shopify_config_list" model="ir.ui.view">
+        <field name="name">shopify.config.list</field>
+        <field name="model">shopify.config</field>
+        <field name="arch" type="xml">
+            <list string="Shopify Stores"
+                  decoration-success="active"
+                  decoration-muted="not active">
+                <field name="name"/>
+                <field name="shop_url"/>
+                <field name="warehouse_id"/>
+                <field name="last_sync"/>
+                <field name="active" widget="boolean_toggle"/>
+            </list>
+        </field>
+    </record>
+</odoo>

@@ -1,0 +1,22 @@
+from odoo import fields, models
+
+
+class ProductVariant(models.Model):
+    _inherit = "product.product"
+
+    shopify_variant_id = fields.Char(index=True, copy=False, readonly=True)
+    shopify_inventory_item_id = fields.Char(index=True, copy=False, readonly=True)
+    shopify_config_id = fields.Many2one(
+        "shopify.config",
+        copy=False,
+        index=True,
+        readonly=True,
+    )
+
+    _sql_constraints = [
+        (
+            "shopify_variant_unique_per_store",
+            "unique(shopify_variant_id, shopify_config_id)",
+            "The Shopify variant must be unique per store.",
+        ),
+    ]
