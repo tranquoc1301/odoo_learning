@@ -1,4 +1,69 @@
 <?xml version="1.0" encoding="UTF-8" ?>
 <odoo>
+    <!-- List View -->
+    <record id="view_sync_log_list" model="ir.ui.view">
+        <field name="name">sync.log.list</field>
+        <field name="model">sync.log</field>
+        <field name="arch" type="xml">
+            <list string="Sync Logs"
+                  decoration-success="status == 'success'"
+                  decoration-warning="status == 'partial'"
+                  decoration-danger="status == 'failed'"
+                  default_order="run_at desc">
+                <field name="run_at"/>
+                <field name="config_id"/>
+                <field name="sync_type"/>
+                <field name="status"/>
+                <field name="message"/>
+                <field name="shopify_id"/>
+                <field name="external_ref"/>
+            </list>
+        </field>
+    </record>
 
+    <!-- Form View -->
+    <record id="view_sync_log_form" model="ir.ui.view">
+        <field name="name">sync.log.form</field>
+        <field name="model">sync.log</field>
+        <field name="arch" type="xml">
+            <form string="Sync Log" decoration-success="status == 'success'" decoration-warning="status == 'partial'" decoration-danger="status == 'failed'">
+                <sheet>
+                    <group>
+                        <group>
+                            <field name="config_id"/>
+                            <field name="sync_type"/>
+                            <field name="status"/>
+                            <field name="run_at"/>
+                        </group>
+                        <group>
+                            <field name="shopify_id"/>
+                            <field name="external_ref"/>
+                        </group>
+                    </group>
+                    <group string="Message">
+                        <field name="message" nolabel="1"/>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <!-- Action Window -->
+    <record id="action_sync_log" model="ir.actions.act_window">
+        <field name="name">Sync Logs</field>
+        <field name="res_model">sync.log</field>
+        <field name="view_mode">list,form</field>
+        <field name="context">{}</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_empty_folder">No sync logs yet</p>
+            <p>Sync logs track all synchronization operations between Shopify and Odoo.</p>
+        </field>
+    </record>
+
+    <!-- Menu Item under Sales app -->
+    <menuitem id="menu_sync_log"
+              name="Sync Logs"
+              action="action_sync_log"
+              parent="sale.sale_menu_root"
+              sequence="100"/>
 </odoo>

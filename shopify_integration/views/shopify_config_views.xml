@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <odoo>
+
+    <!-- List View -->
     <record id="view_shopify_config_list" model="ir.ui.view">
         <field name="name">shopify.config.list</field>
         <field name="model">shopify.config</field>
@@ -15,4 +17,96 @@
             </list>
         </field>
     </record>
+
+    <!-- Form View -->
+    <record id="view_shopify_config_form" model="ir.ui.view">
+        <field name="name">shopify.config.form</field>
+        <field name="model">shopify.config</field>
+        <field name="arch" type="xml">
+            <form string="Shopify Store Configuration">
+                <header>
+                    <button name="action_test_connection"
+                            string="Test Connection"
+                            type="object"
+                            icon="fa-plug"
+                            class="oe_highlight"/>
+                </header>
+
+                <sheet>
+                    <group>
+                        <group string="Connection Details">
+                            <field name="name"/>
+                            <field name="shop_url"/>
+                            <field name="api_access_token" password="True"/>
+                            <field name="active" widget="boolean_toggle"/>
+                        </group>
+                        <group string="Warehouse Settings">
+                            <field name="warehouse_id"/>
+                            <field name="last_sync"/>
+                        </group>
+                    </group>
+
+                    <separator string="Sync Actions"/>
+
+                    <div class="o_shopify_sync_buttons">
+                        <button name="sync_products" string="Sync Products" type="object" icon="fa-cubes"/>
+                        <button name="sync_orders" string="Sync Orders" type="object" icon="fa-shopping-cart"/>
+                        <button name="sync_inventory" string="Sync Inventory" type="object" icon="fa-archive"/>
+                        <button name="sync_all" string="Sync All" type="object" icon="fa-refresh" class="oe_highlight"/>
+                    </div>
+
+                    <notebook>
+                        <page name="sync_logs" string="Sync Logs">
+                            <field name="sync_log_ids">
+                                <list default_order="run_at desc" limit="20">
+                                    <field name="run_at"/>
+                                    <field name="sync_type"/>
+                                    <field name="status"/>
+                                    <field name="message"/>
+                                </list>
+                            </field>
+                        </page>
+                    </notebook>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <!-- Search View -->
+    <record id="view_shopify_config_search" model="ir.ui.view">
+        <field name="name">shopify.config.search</field>
+        <field name="model">shopify.config</field>
+        <field name="arch" type="xml">
+            <search string="Search Shopify Stores">
+                <field name="name"/>
+                <field name="shop_url"/>
+                <filter string="Active"
+                        name="filter_active"
+                        domain="[('active', '=', True)]"/>
+                <filter string="Inactive"
+                        name="filter_inactive"
+                        domain="[('active', '=', False)]"/>
+            </search>
+        </field>
+    </record>
+
+    <!-- Action Window -->
+    <record id="action_shopify_config" model="ir.actions.act_window">
+        <field name="name">Shopify Stores</field>
+        <field name="res_model">shopify.config</field>
+        <field name="view_mode">list,form</field>
+        <field name="context">{}</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_empty_folder">No Shopify store configured</p>
+            <p>Add a Shopify store to start syncing products and orders.</p>
+        </field>
+    </record>
+
+    <!-- Menu Item under Sales app -->
+    <menuitem id="menu_shopify_config"
+              name="Shopify Stores"
+              action="action_shopify_config"
+              parent="sale.sale_menu_root"
+              sequence="90"/>
+
 </odoo>
