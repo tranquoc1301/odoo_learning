@@ -35,6 +35,7 @@ def _fetch_image_b64(url, timeout=15):
         _logger.warning("Failed to download image %s: %s", url, exc)
         return False
 
+
 def _strip_html(html_str):
     """Convert HTML to plain text, strip all tags."""
     text = re.sub(r"<[^>]+>", " ", html_str or "")
@@ -530,7 +531,7 @@ class ShopifyConfig(models.Model):
                 "name": item.get("title") or product.display_name,
                 "product_uom_qty": item.get("quantity", 1),
                 "price_unit": float(item.get("price") or 0.0),
-                "product_uom": product.uom_id.id,
+                "product_uom_id": product.uom_id.id,
             }))
 
         if not lines:
