@@ -1,22 +1,27 @@
 <?xml version="1.0" encoding="UTF-8" ?>
 <odoo>
+
     <!-- List View -->
     <record id="view_sync_log_list" model="ir.ui.view">
         <field name="name">sync.log.list</field>
         <field name="model">sync.log</field>
         <field name="arch" type="xml">
             <list string="Sync Logs"
+                  create="false" edit="false" delete="false"
                   decoration-success="status == 'success'"
                   decoration-warning="status == 'partial'"
-                  decoration-danger="status == 'failed'"
-                  default_order="run_at desc">
+                  decoration-danger="status == 'failed'">
                 <field name="run_at"/>
                 <field name="config_id"/>
                 <field name="sync_type"/>
-                <field name="status"/>
-                <field name="message"/>
+                <field name="status"
+                       widget="badge"
+                       decoration-success="status == 'success'"
+                       decoration-warning="status == 'partial'"
+                       decoration-danger="status == 'failed'"/>
                 <field name="shopify_id"/>
                 <field name="external_ref"/>
+                <field name="message"/>
             </list>
         </field>
     </record>
@@ -26,16 +31,20 @@
         <field name="name">sync.log.form</field>
         <field name="model">sync.log</field>
         <field name="arch" type="xml">
-            <form string="Sync Log" decoration-success="status == 'success'" decoration-warning="status == 'partial'" decoration-danger="status == 'failed'">
+            <form string="Sync Log" create="false" edit="false">
                 <sheet>
                     <group>
-                        <group>
+                        <group string="General">
                             <field name="config_id"/>
                             <field name="sync_type"/>
-                            <field name="status"/>
+                            <field name="status"
+                                   widget="badge"
+                                   decoration-success="status == 'success'"
+                                   decoration-warning="status == 'partial'"
+                                   decoration-danger="status == 'failed'"/>
                             <field name="run_at"/>
                         </group>
-                        <group>
+                        <group string="Shopify Reference">
                             <field name="shopify_id"/>
                             <field name="external_ref"/>
                         </group>
@@ -45,6 +54,39 @@
                     </group>
                 </sheet>
             </form>
+        </field>
+    </record>
+    <!-- Search View -->
+    <record id="view_sync_log_search" model="ir.ui.view">
+        <field name="name">sync.log.search</field>
+        <field name="model">sync.log</field>
+        <field name="arch" type="xml">
+            <search string="Sync Logs">
+                <field name="config_id" string="Store"/>
+                <field name="shopify_id" string="Shopify ID"/>
+                <field name="external_ref" string="Reference"/>
+                <field name="message" string="Message"/>
+                <filter name="filter_success" string="Success"
+                        domain="[('status', '=', 'success')]"/>
+                <filter name="filter_partial" string="Partial"
+                        domain="[('status', '=', 'partial')]"/>
+                <filter name="filter_failed" string="Failed"
+                        domain="[('status', '=', 'failed')]"/>
+                <filter name="filter_product" string="Products"
+                        domain="[('sync_type', '=', 'product')]"/>
+                <filter name="filter_order" string="Orders"
+                        domain="[('sync_type', '=', 'order')]"/>
+                <filter name="filter_inventory" string="Inventory"
+                        domain="[('sync_type', '=', 'inventory')]"/>
+                <group>
+                    <filter name="group_by_store" string="Store"
+                            context="{'group_by': 'config_id'}"/>
+                    <filter name="group_by_type" string="Sync Type"
+                            context="{'group_by': 'sync_type'}"/>
+                    <filter name="group_by_status" string="Status"
+                            context="{'group_by': 'status'}"/>
+                </group>
+            </search>
         </field>
     </record>
 
@@ -66,4 +108,5 @@
               action="action_sync_log"
               parent="sale.sale_menu_root"
               sequence="100"/>
+
 </odoo>

@@ -5,6 +5,7 @@ from datetime import datetime
 from urllib.parse import urlparse
 
 import requests
+import base64
 
 from odoo import _, api, fields, models
 from odoo.exceptions import UserError, ValidationError
@@ -12,6 +13,32 @@ from odoo.exceptions import UserError, ValidationError
 from ..constants import HTTP_RATE_LIMITED, SHOPIFY_API_VERSION
 
 _logger = logging.getLogger(__name__)
+
+
+def _fetch_image_b64(url, timeout=15):
+    """Download image from URL and return base64 encoded string."""
+
+    if not url:
+        return False
+    try:
+        response = requests.get(url, timeout=timeout)
+        response.raise_for_status()
+        content_type = response.headers.get("Content-Type", "")
+        if "image" not in content_type:
+            _logger.warning("URL %s is not an image: %s", url, content_type)
+            return False
+        return base64.b64encode(response.content).decode("utf-8")
+    except requests.exceptions.Timeout:
+        _logger.warning("Timeout downloading image: %s", url)
+        return False
+    except requests.exceptions.RequestException as exc:
+        _logger.warning("Failed to download image %s: %s", url, exc)
+        return False
+
+def _strip_html(html_str):
+    """Convert HTML to plain text, strip all tags."""
+    text = re.sub(r"<[^>]+>", " ", html_str or "")
+    return re.sub(r"\s+", " ", text).strip()
 
 
 class ShopifyConfig(models.Model):
@@ -97,7 +124,7 @@ class ShopifyConfig(models.Model):
             method="GET",
             params=None,
             payload=None,
-            sync_type="product",
+            sync_type=None,
             timeout=30,
             return_response=False,
     ):
@@ -220,6 +247,63 @@ class ShopifyConfig(models.Model):
 
         return ProductCategory.create({"name": "All"})
 
+    def _sync_product_images(self, template, images):
+        """
+        Sync all images from Shopify to Odoo:
+        - Images with no variant_ids → template.image_1920 (main product image)
+        - Images with variant_ids    → product.product.image_1920 per variant
+        - Fallback: if no unassigned image exists, use the first image as main
+        """
+        self.ensure_one()
+        if not images:
+            return
+
+        # Sort by position so the primary image comes first
+        sorted_images = sorted(images, key=lambda i: i.get("position", 999))
+
+        # Build a map of shopify_variant_id → product.product for quick lookup
+        variant_map = {
+            v.shopify_variant_id: v
+            for v in template.product_variant_ids
+            if v.shopify_variant_id
+        }
+
+        main_image_set = False
+
+        for img in sorted_images:
+            url = img.get("src")
+            if not url:
+                continue
+
+            variant_ids = img.get("variant_ids") or []
+
+            if not variant_ids:
+                # Unassigned image → set as the main template image (once only)
+                if not main_image_set:
+                    image_b64 = _fetch_image_b64(url)
+                    if image_b64:
+                        template.write({"image_1920": image_b64})
+                        main_image_set = True
+            else:
+                # Variant-specific image → assign to each matching variant
+                for shopify_vid in variant_ids:
+                    product = variant_map.get(str(shopify_vid))
+                    if not product:
+                        continue
+                    # Only set if the variant doesn't already have its own image
+                    if not product.image_1920:
+                        image_b64 = _fetch_image_b64(url)
+                        if image_b64:
+                            product.write({"image_1920": image_b64})
+
+        # Fallback: if every image is variant-specific, use the first one as main
+        if not main_image_set and sorted_images:
+            url = sorted_images[0].get("src")
+            if url:
+                image_b64 = _fetch_image_b64(url)
+                if image_b64:
+                    template.write({"image_1920": image_b64})
+
     def sync_products(self):
         self.ensure_one()
 
@@ -268,7 +352,7 @@ class ShopifyConfig(models.Model):
 
         vals = {
             "name": shopify_product.get("title") or "",
-            "description_sale": shopify_product.get("body_html") or "",
+            "description_sale": _strip_html(shopify_product.get("body_html") or ""),
             "categ_id": category.id,
             "shopify_product_id": shopify_product_id,
             "shopify_config_id": self.id,
@@ -281,6 +365,8 @@ class ShopifyConfig(models.Model):
         else:
             template = ProductTemplate.create(vals)
             action = "created"
+
+        self._sync_product_images(template, shopify_product.get("images") or [])
 
         for variant in shopify_product.get("variants", []):
             self._sync_single_variant(template, variant)
@@ -295,6 +381,7 @@ class ShopifyConfig(models.Model):
         sku = variant.get("sku") or False
         barcode = variant.get("barcode") or False
         price = float(variant.get("price") or 0.0)
+        weight = variant.get("weight") or False
         inventory_item_id = str(variant.get("inventory_item_id") or "")
 
         # Match by Shopify variant ID
@@ -337,6 +424,7 @@ class ShopifyConfig(models.Model):
             "default_code": sku or False,
             "barcode": barcode,
             "lst_price": price,
+            "weight": weight,
             "shopify_variant_id": shopify_variant_id,
             "shopify_inventory_item_id": inventory_item_id,
             "shopify_config_id": self.id,
@@ -609,25 +697,30 @@ class ShopifyConfig(models.Model):
                     continue
 
                 try:
-                    quant = self.env["stock.quant"].sudo().search([
+                    StockQuant = self.env["stock.quant"].sudo()
+                    quant = StockQuant.search([
                         ("product_id", "=", product.id),
                         ("location_id", "=", location.id),
                     ], limit=1)
 
+                    target_qty = float(available)
+
                     if quant:
-                        quant.sudo().write({"quantity": float(available)})
+                        quant.inventory_quantity = target_qty
+                        quant.action_apply_inventory()
                     else:
-                        self.env["stock.quant"].sudo().create({
+                        quant = StockQuant.create({
                             "product_id": product.id,
                             "location_id": location.id,
-                            "quantity": float(available),
+                            "inventory_quantity": target_qty,
                         })
+                        quant.action_apply_inventory()
+
                     updated += 1
                 except Exception as exc:
                     _logger.exception(
                         "Failed to update inventory for product %s: %s",
-                        product.display_name,
-                        exc,
+                        product.display_name, exc,
                     )
                     errors += 1
 

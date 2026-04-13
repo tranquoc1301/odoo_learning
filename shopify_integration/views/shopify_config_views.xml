@@ -29,7 +29,13 @@
                             string="Test Connection"
                             type="object"
                             icon="fa-plug"
+                            title="Test the connection to your Shopify store"
                             class="oe_highlight"/>
+                    <button name="sync_all"
+                            string="Sync All"
+                            type="object"
+                            icon="fa-refresh"
+                            title="Sync all products, orders and inventory from Shopify"/>
                 </header>
 
                 <sheet>
@@ -46,23 +52,31 @@
                         </group>
                     </group>
 
-                    <separator string="Sync Actions"/>
-
-                    <div class="o_shopify_sync_buttons">
-                        <button name="sync_products" string="Sync Products" type="object" icon="fa-cubes"/>
-                        <button name="sync_orders" string="Sync Orders" type="object" icon="fa-shopping-cart"/>
-                        <button name="sync_inventory" string="Sync Inventory" type="object" icon="fa-archive"/>
-                        <button name="sync_all" string="Sync All" type="object" icon="fa-refresh" class="oe_highlight"/>
-                    </div>
-
                     <notebook>
                         <page name="sync_logs" string="Sync Logs">
-                            <field name="sync_log_ids">
-                                <list default_order="run_at desc" limit="20">
-                                    <field name="run_at"/>
-                                    <field name="sync_type"/>
-                                    <field name="status"/>
-                                    <field name="message"/>
+                            <field name="sync_log_ids" nolabel="1">
+                                <list default_order="run_at desc"
+                                      limit="20"
+                                      create="false" edit="false" delete="false"
+                                      decoration-success="status == 'success'"
+                                      decoration-warning="status == 'partial'"
+                                      decoration-danger="status == 'failed'">
+                                    <field name="run_at" string="Time" optional="show"/>
+                                    <field name="sync_type" string="Type" optional="show"/>
+                                    <field name="status"
+                                           string="Status"
+                                           widget="badge"
+                                           decoration-success="status == 'success'"
+                                           decoration-warning="status == 'partial'"
+                                           decoration-danger="status == 'failed'"
+                                           optional="show"/>
+                                    <field name="shopify_id"
+                                           string="Shopify ID"
+                                           optional="hide"/>
+                                    <field name="external_ref"
+                                           string="Reference"
+                                           optional="hide"/>
+                                    <field name="message" string="Message" optional="show"/>
                                 </list>
                             </field>
                         </page>

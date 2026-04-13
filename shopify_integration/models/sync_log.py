@@ -34,8 +34,14 @@ class SyncLog(models.Model):
         index=True,
     )
     message = fields.Text(string="Message", required=True)
-    shopify_id = fields.Char(string="Shopify ID", index=True)
-    external_ref = fields.Char(string="External Reference", index=True)
+    shopify_id = fields.Char(
+        string="Shopify ID",
+        index=True,
+    )
+    external_ref = fields.Char(
+        string="External Reference",
+        index=True,
+    )
     run_at = fields.Datetime(
         string="Run At",
         default=fields.Datetime.now,

@@ -13,16 +13,14 @@
         - Comprehensive sync logging
     """,
     "author": "Tran Quoc",
-    "depends": ["base", "sale", "stock", "product", "web"],
+    "depends": ["base", "sale", "stock", "product"],
     "data": [
         "security/ir.model.access.csv",
         "data/scheduled_actions.xml",
         "views/shopify_config_views.xml",
         "views/sync_log_views.xml",
-        "views/product_mapping_views.xml",
         "views/shopify_sync_wizard_views.xml"
     ],
-    "assets": {"web.assets_backend": ["shopify_integration/static/src/scss/*.scss"]},
     "demo": [],
     "installable": True,
     "application": False,
