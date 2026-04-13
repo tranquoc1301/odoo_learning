@@ -292,34 +292,56 @@ class ShopifyConfig(models.Model):
         ProductVariant = self.env["product.product"]
 
         shopify_variant_id = str(variant["id"])
-        sku = variant.get("sku") or ""
+        sku = variant.get("sku") or False
+        barcode = variant.get("barcode") or False
         price = float(variant.get("price") or 0.0)
-        barcode = variant.get("barcode") or ""
-        inventory_item_id = variant.get("inventory_item_id")
+        inventory_item_id = str(variant.get("inventory_item_id") or "")
 
+        # Match by Shopify variant ID
         product = ProductVariant.search(
             [
-                ("shopify_config_id", "=", self.id),
-                "|",
                 ("shopify_variant_id", "=", shopify_variant_id),
-                ("default_code", "=", sku),
+                ("shopify_config_id", "=", self.id),
             ],
             limit=1,
         )
 
+        # Match by SKU in the same store
+        if not product and sku:
+            product = ProductVariant.search(
+                [
+                    ("shopify_config_id", "=", self.id),
+                    ("default_code", "=", sku),
+                ],
+                limit=1,
+            )
+
+        # Use default variant if it's the only variant and it's not mapped yet
         if not product:
-            product = template.product_variant_id
+            default_variant = template.product_variant_id
+            if (
+                    len(template.product_variant_ids) == 1
+                    and not default_variant.shopify_variant_id
+            ):
+                product = default_variant
+
+        # Create a new variant if it's not mapped yet'
+        if not product:
+            product = ProductVariant.create({
+                "product_tmpl_id": template.id,
+                "shopify_variant_id": shopify_variant_id,
+                "shopify_config_id": self.id,
+            })
 
         vals = {
-            "default_code": sku,
+            "default_code": sku or False,
             "barcode": barcode,
             "lst_price": price,
             "shopify_variant_id": shopify_variant_id,
-            "shopify_inventory_item_id": str(inventory_item_id or ""),
+            "shopify_inventory_item_id": inventory_item_id,
             "shopify_config_id": self.id,
             "active": True,
         }
-
         product.write(vals)
 
     def sync_orders(self, date_from=None, date_to=None):
@@ -420,6 +442,7 @@ class ShopifyConfig(models.Model):
                 "name": item.get("title") or product.display_name,
                 "product_uom_qty": item.get("quantity", 1),
                 "price_unit": float(item.get("price") or 0.0),
+                "product_uom": product.uom_id.id,
             }))
 
         if not lines:
@@ -529,14 +552,95 @@ class ShopifyConfig(models.Model):
 
     def sync_inventory(self):
         self.ensure_one()
+
+        # Get all variants mapped with Shopify inventory item
+        variants = self.env["product.product"].search([
+            ("shopify_config_id", "=", self.id),
+            ("shopify_inventory_item_id", "!=", False),
+            ("shopify_inventory_item_id", "!=", ""),
+            ("active", "=", True),
+        ])
+
+        if not variants:
+            self._create_sync_log(
+                sync_type="inventory",
+                status="partial",
+                message=_("No mapped variants found. Run a Product sync first."),
+            )
+            return {"created": 0, "updated": 0, "errors": 1}
+
+        # inventory_item_id -> product.product
+        item_map = {v.shopify_inventory_item_id: v for v in variants}
+        item_ids = list(item_map.keys())
+
+        location = self.warehouse_id.lot_stock_id
+        if not location:
+            self._create_sync_log(
+                sync_type="inventory",
+                status="failed",
+                message=_("Warehouse '%s' has no stock location configured.") % self.warehouse_id.name,
+            )
+            return {"created": 0, "updated": 0, "errors": 1}
+
+        BATCH = 50
+        updated = 0
+        errors = 0
+
+        for i in range(0, len(item_ids), BATCH):
+            batch_ids = item_ids[i: i + BATCH]
+            try:
+                data = self._make_api_request(
+                    "inventory_levels.json",
+                    params={"inventory_item_ids": ",".join(batch_ids)},
+                    sync_type="inventory",
+                )
+            except UserError:
+                errors += len(batch_ids)
+                continue
+
+            for level in data.get("inventory_levels", []):
+                inv_item_id = str(level.get("inventory_item_id") or "")
+                available = level.get("available")
+                if available is None:
+                    continue
+
+                product = item_map.get(inv_item_id)
+                if not product:
+                    continue
+
+                try:
+                    quant = self.env["stock.quant"].sudo().search([
+                        ("product_id", "=", product.id),
+                        ("location_id", "=", location.id),
+                    ], limit=1)
+
+                    if quant:
+                        quant.sudo().write({"quantity": float(available)})
+                    else:
+                        self.env["stock.quant"].sudo().create({
+                            "product_id": product.id,
+                            "location_id": location.id,
+                            "quantity": float(available),
+                        })
+                    updated += 1
+                except Exception as exc:
+                    _logger.exception(
+                        "Failed to update inventory for product %s: %s",
+                        product.display_name,
+                        exc,
+                    )
+                    errors += 1
+
+        status = "success" if not errors else ("partial" if updated else "failed")
         self._create_sync_log(
             sync_type="inventory",
-            status="partial",
-            message=_(
-                "Inventory sync requires product.shopify_inventory_item_id and a location mapping strategy before applying quantities through Odoo ORM."
-            ),
+            status=status,
+            message=_("Inventory sync completed. Updated: %(updated)s, Errors: %(errors)s") % {
+                "updated": updated,
+                "errors": errors,
+            },
         )
-        return {"created": 0, "updated": 0, "errors": 1}
+        return {"created": 0, "updated": updated, "errors": errors}
 
     def sync_all(self):
         self.ensure_one()

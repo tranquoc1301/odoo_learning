@@ -19,10 +19,7 @@ class SaleOrder(models.Model):
         ondelete="set null",
     )
 
-    _sql_constraints = [
-        (
-            "shopify_order_unique_per_store",
-            "unique(shopify_order_id, shopify_config_id)",
-            "The Shopify order must be unique per store.",
-        ),
-    ]
+    _shopify_order_unique_per_store = models.Constraint(
+        "unique(shopify_order_id, shopify_config_id)",
+        "The Shopify order must be unique per store.",
+    )

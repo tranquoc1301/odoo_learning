@@ -23,10 +23,7 @@ class ProductTemplate(models.Model):
         copy=False,
     )
 
-    _sql_constraints = [
-        (
-            "shopify_product_unique_per_store",
-            "unique(shopify_product_id, shopify_config_id)",
-            "The Shopify product must be unique per store.",
-        ),
-    ]
+    _shopify_product_unique_per_store = models.Constraint(
+        "unique(shopify_product_id, shopify_config_id)",
+        "The Shopify product must be unique per store.",
+    )

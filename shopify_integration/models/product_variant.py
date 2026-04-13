@@ -24,11 +24,7 @@ class ProductVariant(models.Model):
         readonly=True,
         ondelete="set null",
     )
-
-    _sql_constraints = [
-        (
-            "shopify_variant_unique_per_store",
-            "unique(shopify_variant_id, shopify_config_id)",
-            "The Shopify variant must be unique per store.",
-        ),
-    ]
+    _shopify_variant_unique_per_store = models.Constraint(
+        "unique(shopify_variant_id, shopify_config_id)",
+        "The Shopify variant must be unique per store.",
+    )

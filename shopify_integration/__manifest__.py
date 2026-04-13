@@ -20,6 +20,7 @@
         "views/shopify_config_views.xml",
         "views/sync_log_views.xml",
         "views/product_mapping_views.xml",
+        "views/shopify_sync_wizard_views.xml"
     ],
     "assets": {"web.assets_backend": ["shopify_integration/static/src/scss/*.scss"]},
     "demo": [],
