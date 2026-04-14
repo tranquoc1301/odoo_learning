@@ -310,8 +310,6 @@ class ShopifyConfig(models.Model):
             elif result == "updated":
                 updated += 1
 
-        self.last_sync = fields.Datetime.now()
-
         self._create_sync_log(
             sync_type="product",
             status="success",
@@ -457,6 +455,7 @@ class ShopifyConfig(models.Model):
                 partial += 1
 
         self.last_sync = fields.Datetime.now()
+
         self._create_sync_log(
             sync_type="order",
             status="success" if not partial else "partial",
@@ -487,6 +486,10 @@ class ShopifyConfig(models.Model):
 
         partner = self._get_or_create_customer(shopify_order)
         shipping_partner = self._get_or_create_delivery_partner(partner, shopify_order)
+
+        # không overwrite bằng cache cũ khi create()
+        self.env.cr.flush()
+        partner.invalidate_recordset()
 
         lines = []
         for item in shopify_order.get("line_items", []):
@@ -542,6 +545,10 @@ class ShopifyConfig(models.Model):
             "date_order": self._parse_shopify_datetime(shopify_order.get("created_at")),
             "order_line": lines,
         })
+
+        # Write lại sau create để override nếu _compute vẫn bị gọi
+        order.write({"partner_shipping_id": shipping_partner.id})
+
         order.action_confirm()
         return "created"
 
@@ -593,38 +600,44 @@ class ShopifyConfig(models.Model):
         if not shipping:
             return partner
 
+        country_code = (shipping.get("country_code") or "").upper()
+        country = self.env["res.country"].search(
+            [("code", "=", country_code)], limit=1
+        ) if country_code else self.env["res.country"]
+
+        province_code = (shipping.get("province_code") or "").upper()
+        state = self.env["res.country.state"].search([
+            ("code", "=", province_code),
+            ("country_id", "=", country.id if country else False),
+        ], limit=1) if province_code and country else self.env["res.country.state"]
+
+        delivery_name = _("Delivery Address")
+
         vals = {
             "parent_id": partner.id,
             "type": "delivery",
-            "name": shipping.get("name") or partner.name,
+            "name": delivery_name,
             "street": shipping.get("address1") or "",
             "street2": shipping.get("address2") or "",
             "city": shipping.get("city") or "",
             "zip": shipping.get("zip") or "",
             "phone": shipping.get("phone") or "",
-            "country_id": self._get_country_id(shipping.get("country")),
+            "country_id": country.id if country else False,
+            "state_id": state.id if state else False,
         }
 
-        delivery = Partner.search(
-            [
+        if vals["street"] or vals["zip"]:
+            delivery = Partner.search([
                 ("parent_id", "=", partner.id),
                 ("type", "=", "delivery"),
                 ("street", "=", vals["street"]),
                 ("zip", "=", vals["zip"]),
-            ],
-            limit=1,
-        )
-        if delivery:
-            delivery.write(vals)
-            return delivery
+            ], limit=1)
+            if delivery:
+                delivery.write(vals)
+                return delivery
 
         return Partner.create(vals)
-
-    def _get_country_id(self, country_name):
-        if not country_name:
-            return False
-        country = self.env["res.country"].search([("name", "=", country_name)], limit=1)
-        return country.id or False
 
     def sync_inventory(self):
         self.ensure_one()

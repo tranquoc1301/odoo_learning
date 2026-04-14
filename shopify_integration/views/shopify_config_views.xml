@@ -31,11 +31,6 @@
                             icon="fa-plug"
                             title="Test the connection to your Shopify store"
                             class="oe_highlight"/>
-                    <button name="sync_all"
-                            string="Sync All"
-                            type="object"
-                            icon="fa-refresh"
-                            title="Sync all products, orders and inventory from Shopify"/>
                 </header>
 
                 <sheet>
