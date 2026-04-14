@@ -1,36 +1,74 @@
-<?xml version="1.0" encoding="UTF-8"?>
+<?xml version="1.0" encoding="UTF-8" ?>
 <odoo>
-
     <record id="view_shopify_sync_wizard_form" model="ir.ui.view">
         <field name="name">shopify.sync.wizard.form</field>
         <field name="model">shopify.sync.wizard</field>
         <field name="arch" type="xml">
-            <form string="Manual Shopify Sync">
-                <group>
-                    <group string="Sync Settings">
-                        <field name="config_id"/>
-                        <field name="sync_type"/>
+            <form string="Manual Shopify Sync" create="false" edit="false" delete="false">
+                <sheet>
+
+                    <!-- DRAFT STATE -->
+                    <group invisible="state != 'draft'">
+                        <group string="Store &amp; Sync Type">
+                            <field name="config_id"/>
+                            <field name="sync_type"/>
+                        </group>
+                        <group string="Order Date Filter (optional)"
+                               invisible="sync_type not in ['orders', 'all']">
+                            <field name="date_from"/>
+                            <field name="date_to"/>
+                        </group>
                     </group>
-                    <group string="Date Range (Orders only)">
-                        <field name="date_from"/>
-                        <field name="date_to"/>
+
+                    <!-- DONE STATE -->
+                    <group invisible="state != 'done'">
+
+                        <group string="Synced">
+                            <field name="config_id"
+                                   readonly="1"
+                                   options="{'no_open': True}"/>
+                            <field name="sync_type" readonly="1"/>
+                        </group>
+
+                        <group/>
+                        <field name="summary_html"
+                               nolabel="1"
+                               readonly="1"
+                               colspan="2"/>
+
                     </group>
-                </group>
-                <footer>
+
+                </sheet>
+
+                <!-- Draft footer -->
+                <footer invisible="state != 'draft'">
                     <button name="action_sync"
-                            string="Start Sync"
+                            string="Run Sync"
                             type="object"
-                            class="btn-primary"/>
+                            class="btn btn-primary"/>
                     <button string="Cancel"
-                            class="btn-secondary"
-                            special="cancel"/>
+                            special="cancel"
+                            class="btn btn-secondary"/>
                 </footer>
+
+                <!-- Done footer -->
+                <footer invisible="state != 'done'">
+                    <button name="action_reset"
+                            string="Run Another Sync"
+                            type="object"
+                            class="btn btn-secondary"/>
+                    <button name="action_close"
+                            string="Close"
+                            type="object"
+                            class="btn btn-primary"/>
+                </footer>
+
             </form>
         </field>
     </record>
 
     <record id="action_shopify_sync_wizard" model="ir.actions.act_window">
-        <field name="name">Manual Sync</field>
+        <field name="name">Manual Shopify Sync</field>
         <field name="res_model">shopify.sync.wizard</field>
         <field name="view_mode">form</field>
         <field name="target">new</field>
@@ -41,5 +79,4 @@
               action="action_shopify_sync_wizard"
               parent="sale.sale_menu_root"
               sequence="95"/>
-
 </odoo>

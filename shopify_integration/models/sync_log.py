@@ -10,7 +10,7 @@ class SyncLog(models.Model):
         "shopify.config",
         string="Store",
         required=True,
-        ondelete="cascade",
+        ondelete="restrict",
         index=True,
     )
     sync_type = fields.Selection(

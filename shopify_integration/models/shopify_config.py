@@ -9,8 +9,7 @@ import base64
 
 from odoo import _, api, fields, models
 from odoo.exceptions import UserError, ValidationError
-
-from ..constants import HTTP_RATE_LIMITED, SHOPIFY_API_VERSION
+from ..constants import HTTP_RATE_LIMITED, SHOPIFY_API_VERSION, MAX_RATE_LIMIT_RETRIES
 
 _logger = logging.getLogger(__name__)
 
@@ -119,16 +118,9 @@ class ShopifyConfig(models.Model):
             "external_ref": external_ref,
         })
 
-    def _make_api_request(
-            self,
-            endpoint_or_url,
-            method="GET",
-            params=None,
-            payload=None,
-            sync_type=None,
-            timeout=30,
-            return_response=False,
-    ):
+    def _make_api_request(self, endpoint_or_url, method="GET",
+                          params=None, payload=None, sync_type=None,
+                          timeout=30, return_response=False):
         self.ensure_one()
 
         if endpoint_or_url.startswith("http"):
@@ -137,39 +129,32 @@ class ShopifyConfig(models.Model):
             url = f"{self._get_base_url()}/{endpoint_or_url.lstrip('/')}"
 
         try:
-            response = requests.request(
-                method=method,
-                url=url,
-                headers=self._get_headers(),
-                params=params,
-                json=payload,
-                timeout=timeout,
-            )
-
-            if response.status_code == HTTP_RATE_LIMITED:
-                retry_after = float(response.headers.get("Retry-After", 1))
-                _logger.warning("Shopify rate limited. Sleeping %s seconds", retry_after)
-                time.sleep(retry_after)
+            for attempt in range(1, MAX_RATE_LIMIT_RETRIES + 2):
                 response = requests.request(
-                    method=method,
-                    url=url,
+                    method=method, url=url,
                     headers=self._get_headers(),
-                    params=params,
-                    json=payload,
-                    timeout=timeout,
+                    params=params, json=payload, timeout=timeout,
                 )
 
-            response.raise_for_status()
-            return response if return_response else response.json()
+                if response.status_code == HTTP_RATE_LIMITED:
+                    if attempt > MAX_RATE_LIMIT_RETRIES:
+                        response.raise_for_status()
+
+                    retry_after = float(response.headers.get("Retry-After", 1))
+                    _logger.warning(
+                        "Shopify rate limited (attempt %s/%s). Sleeping %.1f s.",
+                        attempt, MAX_RATE_LIMIT_RETRIES, retry_after,
+                    )
+                    time.sleep(retry_after)
+                    continue
+
+                response.raise_for_status()
+                return response if return_response else response.json()
 
         except Exception as exc:
             message = _("Shopify API error: %s") % exc
             _logger.exception(message)
-            self._create_sync_log(
-                sync_type=sync_type,
-                status="failed",
-                message=message,
-            )
+            self._create_sync_log(sync_type=sync_type, status="failed", message=message)
             raise UserError(message) from exc
 
     def _extract_next_url(self, link_header):
@@ -324,6 +309,8 @@ class ShopifyConfig(models.Model):
                 created += 1
             elif result == "updated":
                 updated += 1
+
+        self.last_sync = fields.Datetime.now()
 
         self._create_sync_log(
             sync_type="product",
