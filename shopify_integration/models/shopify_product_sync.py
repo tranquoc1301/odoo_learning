@@ -12,7 +12,7 @@ _logger = logging.getLogger(__name__)
 def _fetch_image_b64(url, timeout=15):
     """Download an image from *url* and return its base64-encoded bytes as a string.
 
-    Returns False when the URL is empty, the content is not an image
+    Returns False when the URL is empty, the content is not an image.
     """
     if not url:
         return False
@@ -39,9 +39,7 @@ def _strip_html(html_str):
 
 
 class ShopifyConfigProduct(models.Model):
-    """
-    Product sync logic for shopify.config.
-    """
+    """Product sync logic for shopify.config."""
 
     _inherit = "shopify.config"
 
@@ -79,7 +77,7 @@ class ShopifyConfigProduct(models.Model):
     def _sync_single_product(self, shopify_product):
         """Create or update a product.template from a Shopify product dict.
 
-        Returns 'created' or 'updated' to let the caller keep counters.
+        Returns 'created', 'updated', or 'skipped'.
         """
         self.ensure_one()
         ProductTemplate = self.env["product.template"]
@@ -98,7 +96,7 @@ class ShopifyConfigProduct(models.Model):
 
         vals = {
             "name": shopify_product.get("title") or "",
-            "description_sale": _strip_html(shopify_product.get("body_html") or ""),
+            "description": shopify_product.get("body_html") or "",
             "categ_id": category.id,
             "shopify_product_id": shopify_product_id,
             "shopify_config_id": self.id,
@@ -106,8 +104,20 @@ class ShopifyConfigProduct(models.Model):
         }
 
         if template:
-            template.write(vals)
-            action = "updated"
+            current = {
+                "name": template.name or "",
+                "description": template.description or "",
+                "categ_id": template.categ_id.id,
+                "shopify_product_id": template.shopify_product_id or "",
+                "shopify_config_id": template.shopify_config_id.id,
+                "shopify_product_type": template.shopify_product_type or "",
+            }
+            changed_vals = {k: v for k, v in vals.items() if current[k] != v}
+            if changed_vals:
+                template.write(changed_vals)
+                action = "updated"
+            else:
+                action = "skipped"
         else:
             template = ProductTemplate.create(vals)
             action = "created"
@@ -122,8 +132,7 @@ class ShopifyConfigProduct(models.Model):
     # ── Variant upsert ────────────────────────────────────────────────────────
 
     def _sync_single_variant(self, template, variant):
-        """Create or update a product.product (variant) from a Shopify variant dict.
-        """
+        """Create or update a product.product (variant) from a Shopify variant dict."""
         self.ensure_one()
         ProductVariant = self.env["product.product"]
 
@@ -170,7 +179,7 @@ class ShopifyConfigProduct(models.Model):
                 "shopify_config_id": self.id,
             })
 
-        product.write({
+        variant_vals = {
             "default_code": sku or False,
             "barcode": barcode,
             "lst_price": price,
@@ -179,14 +188,28 @@ class ShopifyConfigProduct(models.Model):
             "shopify_inventory_item_id": inventory_item_id,
             "shopify_config_id": self.id,
             "active": True,
-        })
+        }
+
+        # Build current values dùng .id cho Many2one (shopify_config_id)
+        # để so sánh đúng kiểu — tránh recordset != int luôn True
+        current = {
+            "default_code": product.default_code or False,
+            "barcode": product.barcode or False,
+            "lst_price": product.lst_price,
+            "weight": product.weight or False,
+            "shopify_variant_id": product.shopify_variant_id or "",
+            "shopify_inventory_item_id": product.shopify_inventory_item_id or "",
+            "shopify_config_id": product.shopify_config_id.id,
+            "active": product.active,
+        }
+        changed_vals = {k: v for k, v in variant_vals.items() if current[k] != v}
+        if changed_vals:
+            product.write(changed_vals)
 
     # ── Image sync ────────────────────────────────────────────────────────────
 
     def _sync_product_images(self, template, images):
-        """
-        Assign Shopify images to the corresponding Odoo records
-        """
+        """Assign Shopify images to the corresponding Odoo records."""
         self.ensure_one()
         if not images:
             return
@@ -211,14 +234,14 @@ class ShopifyConfigProduct(models.Model):
             variant_ids = img.get("variant_ids") or []
 
             if not variant_ids:
-                # Unassigned image -> use as the main template image (first occurrence only)
+                # Unassigned image → use as the main template image (first occurrence only)
                 if not main_image_set:
                     image_b64 = _fetch_image_b64(url)
                     if image_b64:
                         template.write({"image_1920": image_b64})
                         main_image_set = True
             else:
-                # Variant-specific image -> assign to each matching variant
+                # Variant-specific image → assign to each matching variant
                 for shopify_vid in variant_ids:
                     product = variant_map.get(str(shopify_vid))
                     if not product:
@@ -229,7 +252,7 @@ class ShopifyConfigProduct(models.Model):
                         if image_b64:
                             product.write({"image_1920": image_b64})
 
-        # Fallback: every image was variant-specific -> use the first one as the main image
+        # Fallback: every image was variant-specific → use the first one as the main image
         if not main_image_set and sorted_images:
             url = sorted_images[0].get("src")
             if url:
@@ -240,8 +263,7 @@ class ShopifyConfigProduct(models.Model):
     # ── Category helper ───────────────────────────────────────────────────────
 
     def _get_or_create_category(self, product_type):
-        """Return a product.category matching *product_type*, creating one if needed.
-        """
+        """Return a product.category matching *product_type*, creating one if needed."""
         self.ensure_one()
         ProductCategory = self.env["product.category"]
 

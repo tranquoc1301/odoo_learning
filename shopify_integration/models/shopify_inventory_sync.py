@@ -2,6 +2,7 @@ import logging
 
 from odoo import _, models
 from odoo.exceptions import UserError
+from odoo.tools.float_utils import float_compare
 
 _logger = logging.getLogger(__name__)
 
@@ -75,8 +76,10 @@ class ShopifyConfigInventory(models.Model):
                     continue
 
                 try:
-                    self._apply_qty(product, location, float(available))
-                    updated += 1
+                    changed = self._apply_qty(product, location, float(available))
+                    if changed:
+                        updated += 1
+                    # qty không thay đổi → không tính vào updated
                 except Exception as exc:
                     _logger.exception(
                         "Failed to update inventory for product %s: %s",
@@ -95,7 +98,11 @@ class ShopifyConfigInventory(models.Model):
         return {"created": 0, "updated": updated, "errors": errors}
 
     def _apply_qty(self, product, location, qty):
-        """Set the on-hand quantity of *product* at *location* to exactly *qty*."""
+        """Set the on-hand quantity of *product* at *location* to exactly *qty*.
+
+        Returns True nếu quantity thực sự được thay đổi, False nếu đã đúng rồi
+        (tránh tạo stock move thừa và đếm sai counter updated).
+        """
         StockQuant = self.env["stock.quant"].sudo()
         quant = StockQuant.search(
             [
@@ -106,12 +113,17 @@ class ShopifyConfigInventory(models.Model):
         )
 
         if quant:
+            # So sánh với quantity thực tế (on-hand), không phải inventory_quantity
+            if float_compare(quant.quantity, qty, precision_digits=2) == 0:
+                return False  # qty không đổi → bỏ qua, không tạo stock move
+
             quant.inventory_quantity = qty
             quant.action_apply_inventory()
         else:
-            quant = StockQuant.create({
+            StockQuant.create({
                 "product_id": product.id,
                 "location_id": location.id,
                 "inventory_quantity": qty,
-            })
-            quant.action_apply_inventory()
+            }).action_apply_inventory()
+
+        return True
