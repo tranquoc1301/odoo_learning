@@ -96,7 +96,7 @@ class ShopifyConfigProduct(models.Model):
 
         vals = {
             "name": shopify_product.get("title") or "",
-            "description": shopify_product.get("body_html") or "",
+            "description_sale": _strip_html(shopify_product.get("body_html") or ""),
             "categ_id": category.id,
             "shopify_product_id": shopify_product_id,
             "shopify_config_id": self.id,
@@ -106,7 +106,7 @@ class ShopifyConfigProduct(models.Model):
         if template:
             current = {
                 "name": template.name or "",
-                "description": template.description or "",
+                "description_sale": template.description_sale or "",
                 "categ_id": template.categ_id.id,
                 "shopify_product_id": template.shopify_product_id or "",
                 "shopify_config_id": template.shopify_config_id.id,
