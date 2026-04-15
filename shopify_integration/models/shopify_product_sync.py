@@ -31,13 +31,6 @@ def _fetch_image_b64(url, timeout=15):
         _logger.warning("Failed to download image %s: %s", url, exc)
         return False
 
-
-def _strip_html(html_str):
-    """Convert an HTML string to plain text by removing all tags."""
-    text = re.sub(r"<[^>]+>", " ", html_str or "")
-    return re.sub(r"\s+", " ", text).strip()
-
-
 class ShopifyConfigProduct(models.Model):
     """Product sync logic for shopify.config."""
 
@@ -96,7 +89,7 @@ class ShopifyConfigProduct(models.Model):
 
         vals = {
             "name": shopify_product.get("title") or "",
-            "description_sale": _strip_html(shopify_product.get("body_html") or ""),
+            "description": shopify_product.get("body_html") or "",
             "categ_id": category.id,
             "shopify_product_id": shopify_product_id,
             "shopify_config_id": self.id,
@@ -106,7 +99,7 @@ class ShopifyConfigProduct(models.Model):
         if template:
             current = {
                 "name": template.name or "",
-                "description_sale": template.description_sale or "",
+                "description": template.description or "",
                 "categ_id": template.categ_id.id,
                 "shopify_product_id": template.shopify_product_id or "",
                 "shopify_config_id": template.shopify_config_id.id,
