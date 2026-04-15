@@ -1,4 +1,7 @@
 from . import shopify_config
+from . import shopify_product_sync
+from . import shopify_order_sync
+from . import shopify_inventory_sync
 from . import sync_log
 from . import product_template
 from . import product_variant
