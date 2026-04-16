@@ -231,12 +231,14 @@ class ShopifyConfig(models.Model):
     # ── Orchestrator ──────────────────────────────────────────────────────────
 
     def sync_all(self):
-        """
-        Run all three sync operations in sequence: products -> orders -> inventory.
-        A failure in one step does not prevent the others from running.
+        """Run products → orders → inventory in sequence.
+
+        Each step is isolated: a failure is logged but does not block the next step.
+        Returns a dict keyed by sync type with each step's summary.
         """
         self.ensure_one()
-        result = {"products": {}, "orders": {}, "inventory": {}}
+        result = {}
+        total_errors = 0
 
         for key, method in (
                 ("products", self.sync_products),
@@ -245,13 +247,19 @@ class ShopifyConfig(models.Model):
         ):
             try:
                 result[key] = method()
-            except (UserError, ValidationError) as exc:
-                result[key] = {
-                    "created": 0,
-                    "updated": 0,
-                    "errors": 1,
-                    "message": str(exc),
-                }
+            except Exception as exc:
+                _logger.exception(
+                    "sync_all: %s failed for config %s", key, self.display_name
+                )
+                result[key] = {"created": 0, "updated": 0, "errors": 1}
+
+            total_errors += result[key].get("errors", 0)
+
+        self._create_sync_log(
+            sync_type="all",
+            status="failed" if total_errors else "success",
+            message=_("Sync all completed — errors: %s") % total_errors,
+        )
 
         return result
 
