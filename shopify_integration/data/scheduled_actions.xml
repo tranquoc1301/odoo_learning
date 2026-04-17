@@ -3,7 +3,7 @@
     <!-- Product Sync - Runs every 1 hour -->
     <record id="ir_cron_shopify_sync_products" model="ir.cron">
         <field name="name">Shopify: Sync Products</field>
-        <field name="model_id" ref="model_shopify_config"/>
+        <field name="model_id" ref="model_shopify_orchestrator"/>
         <field name="code">model.cron_sync_products()</field>
         <field name="interval_number">1</field>
         <field name="interval_type">hours</field>
@@ -14,7 +14,7 @@
     <!-- Order Sync - Runs every 15 minutes -->
     <record id="ir_cron_shopify_sync_orders" model="ir.cron">
         <field name="name">Shopify: Sync Orders</field>
-        <field name="model_id" ref="model_shopify_config"/>
+        <field name="model_id" ref="model_shopify_orchestrator"/>
         <field name="code">model.cron_sync_orders()</field>
         <field name="interval_number">15</field>
         <field name="interval_type">minutes</field>
@@ -25,7 +25,7 @@
     <!-- Inventory Sync - Runs every 1 hour -->
     <record id="ir_cron_shopify_sync_inventory" model="ir.cron">
         <field name="name">Shopify: Sync Inventory</field>
-        <field name="model_id" ref="model_shopify_config"/>
+        <field name="model_id" ref="model_shopify_orchestrator"/>
         <field name="code">model.cron_sync_inventory()</field>
         <field name="interval_number">1</field>
         <field name="interval_type">hours</field>

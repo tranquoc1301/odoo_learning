@@ -5,16 +5,27 @@ import requests
 
 from odoo import _, models
 
+from .shopify_client import ShopifyClient
+from ..constants import (
+    PRODUCT_PAGE_LIMIT,
+    IMAGE_DOWNLOAD_TIMEOUT,
+    DEFAULT_IMAGE_POSITION,
+    DEFAULT_VARIANT_SEARCH_LIMIT,
+    DEFAULT_CATEGORY_SEARCH_LIMIT,
+)
+
 _logger = logging.getLogger(__name__)
 
 
-def _fetch_image_b64(url, timeout=15):
+def _fetch_image_b64(url, timeout=None):
     """Download *url* and return its content as a base64 string.
 
     Returns False if the URL is empty, times out, or is not an image.
     """
     if not url:
         return False
+    if timeout is None:
+        timeout = IMAGE_DOWNLOAD_TIMEOUT
     try:
         response = requests.get(url, timeout=timeout)
         response.raise_for_status()
@@ -39,11 +50,11 @@ class ShopifyConfigProduct(models.Model):
     def sync_products(self):
         self.ensure_one()
 
-        products = self._get_all_pages(
+        client = ShopifyClient(self)
+        products = client.get_all(
             "products.json",
-            params={"limit": 250},
+            params={"limit": PRODUCT_PAGE_LIMIT},
             key="products",
-            sync_type="product",
         )
 
         created = updated = errors = 0
@@ -66,12 +77,14 @@ class ShopifyConfigProduct(models.Model):
                 )
 
         status = "success" if not errors else "partial"
-        self._create_sync_log(
+        self.env["sync.log"].create_from_config(
+            self,
             sync_type="product",
             status=status,
             message=_(
                 "Products synced. Created: %(created)s, Updated: %(updated)s, Errors: %(errors)s"
-            ) % {"created": created, "updated": updated, "errors": errors},
+            )
+            % {"created": created, "updated": updated, "errors": errors},
         )
         return {"created": created, "updated": updated, "errors": errors}
 
@@ -90,7 +103,7 @@ class ShopifyConfigProduct(models.Model):
                 ("shopify_product_id", "=", shopify_product_id),
                 ("shopify_config_id", "=", self.id),
             ],
-            limit=1,
+            limit=DEFAULT_VARIANT_SEARCH_LIMIT,
         )
 
         vals = {
@@ -122,7 +135,9 @@ class ShopifyConfigProduct(models.Model):
             action = "created"
 
         image_cache = {}
-        self._sync_product_images(template, shopify_product.get("images") or [], image_cache)
+        self._sync_product_images(
+            template, shopify_product.get("images") or [], image_cache
+        )
 
         for variant in shopify_product.get("variants", []):
             variant_changed = self._sync_single_variant(template, variant)
@@ -151,13 +166,13 @@ class ShopifyConfigProduct(models.Model):
         # 1. Exact Shopify variant ID match
         product = ProductVariant.search(
             [("shopify_variant_id", "=", shopify_variant_id)],
-            limit=1,
+            limit=DEFAULT_VARIANT_SEARCH_LIMIT,
         )
         # 2. SKU match within the same store
         if not product and sku:
             product = ProductVariant.search(
                 [("shopify_config_id", "=", self.id), ("default_code", "=", sku)],
-                limit=1,
+                limit=DEFAULT_VARIANT_SEARCH_LIMIT,
             )
         # 3. Reuse the sole variant on this template
         if not product and len(template.product_variant_ids) == 1:
@@ -165,16 +180,21 @@ class ShopifyConfigProduct(models.Model):
         # 4. Fallback: empty combination_indices variant
         if not product:
             product = ProductVariant.search(
-                [("product_tmpl_id", "=", template.id), ("combination_indices", "=", "")],
-                limit=1,
+                [
+                    ("product_tmpl_id", "=", template.id),
+                    ("combination_indices", "=", ""),
+                ],
+                limit=DEFAULT_VARIANT_SEARCH_LIMIT,
             )
         # 5. Create new variant
         if not product:
-            product = ProductVariant.create({
-                "product_tmpl_id": template.id,
-                "shopify_variant_id": shopify_variant_id,
-                "shopify_config_id": self.id,
-            })
+            product = ProductVariant.create(
+                {
+                    "product_tmpl_id": template.id,
+                    "shopify_variant_id": shopify_variant_id,
+                    "shopify_config_id": self.id,
+                }
+            )
 
         variant_vals = {
             "default_code": sku or False,
@@ -236,7 +256,9 @@ class ShopifyConfigProduct(models.Model):
                 image_cache[url] = _fetch_image_b64(url)
             return image_cache[url]
 
-        sorted_images = sorted(images, key=lambda i: i.get("position", 999))
+        sorted_images = sorted(
+            images, key=lambda i: i.get("position", DEFAULT_IMAGE_POSITION)
+        )
         variant_map = {
             v.shopify_variant_id: v
             for v in template.product_variant_ids
@@ -277,10 +299,13 @@ class ShopifyConfigProduct(models.Model):
         self.ensure_one()
         ProductCategory = self.env["product.category"].sudo()
         if product_type:
-            category = ProductCategory.search([("name", "=", product_type)], limit=1)
+            category = ProductCategory.search(
+                [("name", "=", product_type)],
+                limit=DEFAULT_CATEGORY_SEARCH_LIMIT,
+            )
             return category or ProductCategory.create({"name": product_type})
         return (
             self.env.ref("product.product_category_all", raise_if_not_found=False)
-            or ProductCategory.search([], limit=1)
+            or ProductCategory.search([], limit=DEFAULT_CATEGORY_SEARCH_LIMIT)
             or ProductCategory.create({"name": "All"})
         )

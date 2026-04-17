@@ -3,6 +3,15 @@ from datetime import datetime
 
 from odoo import _, fields, models
 
+from .shopify_client import ShopifyClient
+from ..constants import (
+    ORDER_PAGE_LIMIT,
+    DEFAULT_VARIANT_SEARCH_LIMIT,
+    DEFAULT_PARTNER_SEARCH_LIMIT,
+    DEFAULT_COUNTRY_SEARCH_LIMIT,
+    DEFAULT_STATE_SEARCH_LIMIT,
+)
+
 _logger = logging.getLogger(__name__)
 
 
@@ -18,7 +27,7 @@ class ShopifyConfigOrder(models.Model):
         self.ensure_one()
 
         params = {
-            "limit": 50,
+            "limit": ORDER_PAGE_LIMIT,
             "status": "any",
         }
 
@@ -30,11 +39,11 @@ class ShopifyConfigOrder(models.Model):
         if date_to:
             params["created_at_max"] = date_to.strftime("%Y-%m-%dT%H:%M:%SZ")
 
-        orders = self._get_all_pages(
+        client = ShopifyClient(self)
+        orders = client.get_all(
             "orders.json",
             params=params,
             key="orders",
-            sync_type="order",
         )
 
         created = 0
@@ -52,12 +61,14 @@ class ShopifyConfigOrder(models.Model):
 
         self.last_sync = fields.Datetime.now()
 
-        self._create_sync_log(
+        self.env["sync.log"].create_from_config(
+            self,
             sync_type="order",
             status="success" if not partial else "partial",
             message=_(
                 "Orders synced. Created: %(created)s, Skipped: %(skipped)s, Partial: %(partial)s"
-            ) % {"created": created, "skipped": skipped, "partial": partial},
+            )
+            % {"created": created, "skipped": skipped, "partial": partial},
         )
         return {"created": created, "updated": 0, "errors": partial}
 
@@ -76,7 +87,7 @@ class ShopifyConfigOrder(models.Model):
                 ("shopify_order_id", "=", shopify_order_id),
                 ("shopify_config_id", "=", self.id),
             ],
-            limit=1,
+            limit=DEFAULT_VARIANT_SEARCH_LIMIT,
         )
         if existing_order:
             return "skipped"
@@ -100,11 +111,12 @@ class ShopifyConfigOrder(models.Model):
                     ("shopify_variant_id", "=", variant_id),
                     ("default_code", "=", sku),
                 ],
-                limit=1,
+                limit=DEFAULT_VARIANT_SEARCH_LIMIT,
             )
 
             if not product:
-                self._create_sync_log(
+                self.env["sync.log"].create_from_config(
+                    self,
                     sync_type="order",
                     status="partial",
                     message=_("Missing SKU while importing order: %s") % (sku or "-"),
@@ -113,36 +125,47 @@ class ShopifyConfigOrder(models.Model):
                 )
                 continue
 
-            lines.append((0, 0, {
-                "product_id": product.id,
-                "name": item.get("title") or product.display_name,
-                "product_uom_qty": item.get("quantity", 1),
-                "price_unit": float(item.get("price") or 0.0),
-                "product_uom_id": product.uom_id.id,
-            }))
+            lines.append(
+                (
+                    0,
+                    0,
+                    {
+                        "product_id": product.id,
+                        "name": item.get("title") or product.display_name,
+                        "product_uom_qty": item.get("quantity", 1),
+                        "price_unit": float(item.get("price") or 0.0),
+                        "product_uom_id": product.uom_id.id,
+                    },
+                )
+            )
 
         if not lines:
-            self._create_sync_log(
+            self.env["sync.log"].create_from_config(
+                self,
                 sync_type="order",
                 status="failed",
-                message=_(
-                    "Order %s skipped because no valid order lines were found."
-                ) % (shopify_order.get("name") or shopify_order_id),
+                message=_("Order %s skipped because no valid order lines were found.")
+                % (shopify_order.get("name") or shopify_order_id),
                 shopify_id=shopify_order_id,
             )
             return "partial"
 
-        order = SaleOrder.create({
-            "partner_id": partner.id,
-            "partner_invoice_id": partner.id,
-            "partner_shipping_id": shipping_partner.id,
-            "warehouse_id": self.warehouse_id.id,
-            "shopify_order_id": shopify_order_id,
-            "shopify_config_id": self.id,
-            "client_order_ref": shopify_order.get("name") or f"shopify_{shopify_order_id}",
-            "date_order": self._parse_shopify_datetime(shopify_order.get("created_at")),
-            "order_line": lines,
-        })
+        order = SaleOrder.create(
+            {
+                "partner_id": partner.id,
+                "partner_invoice_id": partner.id,
+                "partner_shipping_id": shipping_partner.id,
+                "warehouse_id": self.warehouse_id.id,
+                "shopify_order_id": shopify_order_id,
+                "shopify_config_id": self.id,
+                "client_order_ref": shopify_order.get("name")
+                or f"shopify_{shopify_order_id}",
+                "date_order": self._parse_shopify_datetime(
+                    shopify_order.get("created_at")
+                ),
+                "order_line": lines,
+            }
+        )
 
         # Re-write the shipping partner after create() to ensure computed fields
         order.write({"partner_shipping_id": shipping_partner.id})
@@ -157,7 +180,9 @@ class ShopifyConfigOrder(models.Model):
         if not value:
             return fields.Datetime.now()
         try:
-            return datetime.fromisoformat(value.replace("Z", "+00:00")).replace(tzinfo=None)
+            return datetime.fromisoformat(value.replace("Z", "+00:00")).replace(
+                tzinfo=None
+            )
         except Exception:
             return fields.Datetime.now()
 
@@ -176,26 +201,31 @@ class ShopifyConfigOrder(models.Model):
 
         partner = Partner.search(
             [("email", "=", email), ("type", "=", "contact")],
-            limit=1,
+            limit=DEFAULT_PARTNER_SEARCH_LIMIT,
         )
         if partner:
             return partner
 
-        full_name = " ".join(
-            filter(
-                None,
-                [
-                    customer_data.get("first_name"),
-                    customer_data.get("last_name"),
-                ],
+        full_name = (
+            " ".join(
+                filter(
+                    None,
+                    [
+                        customer_data.get("first_name"),
+                        customer_data.get("last_name"),
+                    ],
+                )
             )
-        ) or email
+            or email
+        )
 
-        return Partner.create({
-            "name": full_name,
-            "email": email,
-            "type": "contact",
-        })
+        return Partner.create(
+            {
+                "name": full_name,
+                "email": email,
+                "type": "contact",
+            }
+        )
 
     def _get_or_create_delivery_partner(self, partner, shopify_order):
         """Return the delivery res.partner (child of *partner*) for this order."""
@@ -209,7 +239,10 @@ class ShopifyConfigOrder(models.Model):
 
         country_code = (shipping.get("country_code") or "").upper()
         country = (
-            self.env["res.country"].search([("code", "=", country_code)], limit=1)
+            self.env["res.country"].search(
+                [("code", "=", country_code)],
+                limit=DEFAULT_COUNTRY_SEARCH_LIMIT,
+            )
             if country_code
             else self.env["res.country"]
         )
@@ -221,7 +254,7 @@ class ShopifyConfigOrder(models.Model):
                     ("code", "=", province_code),
                     ("country_id", "=", country.id if country else False),
                 ],
-                limit=1,
+                limit=DEFAULT_STATE_SEARCH_LIMIT,
             )
             if province_code and country
             else self.env["res.country.state"]
@@ -249,7 +282,7 @@ class ShopifyConfigOrder(models.Model):
                     ("street", "=", vals["street"]),
                     ("zip", "=", vals["zip"]),
                 ],
-                limit=1,
+                limit=DEFAULT_PARTNER_SEARCH_LIMIT,
             )
             if delivery:
                 delivery.write(vals)
