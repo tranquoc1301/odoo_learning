@@ -17,6 +17,24 @@ from ..constants import (
 _logger = logging.getLogger(__name__)
 
 
+def _compute_changed_vals(record, new_vals):
+    """Return dict of fields that actually changed vs current DB values.
+
+    Builds a snapshot of current DB values and compares with new_vals.
+    Only returns fields that differ — avoids unnecessary write logs
+    and triggering computed fields for no reason.
+    """
+    current = {}
+    for key in new_vals:
+        value = getattr(record, key, False)
+        # Handle Many2one relational fields (stored as recordset)
+        if hasattr(value, 'id'):
+            value = value.id or False
+        current[key] = value
+
+    return {k: v for k, v in new_vals.items() if current.get(k) != v}
+
+
 def _fetch_image_b64(url, timeout=None):
     """Download *url* and return its content as a base64 string.
 
@@ -84,28 +102,29 @@ class ShopifyConfigProduct(models.Model):
             message=_(
                 "Products synced. Created: %(created)s, Updated: %(updated)s, Errors: %(errors)s"
             )
-            % {"created": created, "updated": updated, "errors": errors},
+                    % {"created": created, "updated": updated, "errors": errors},
         )
         return {"created": created, "updated": updated, "errors": errors}
 
     # ── Product upsert ────────────────────────────────────────────────────────
 
     def _sync_single_product(self, shopify_product):
+        """Upsert a Shopify product into a product.template record."""
+
         self.ensure_one()
         ProductTemplate = self.env["product.template"]
 
         shopify_product_id = str(shopify_product["id"])
         product_type = shopify_product.get("product_type") or ""
+        # Map Shopify product_type to an Odoo product.category
         category = self._get_or_create_category(product_type)
 
-        template = ProductTemplate.search(
-            [
-                ("shopify_product_id", "=", shopify_product_id),
-                ("shopify_config_id", "=", self.id),
-            ],
-            limit=DEFAULT_VARIANT_SEARCH_LIMIT,
+        # Check if this product was already imported from the same store
+        template = self._find_by_shopify_id(
+            "product.template", "shopify_product_id", shopify_product_id
         )
 
+        # Fetched product data from Shopify API
         vals = {
             "name": shopify_product.get("title") or "",
             "description": shopify_product.get("body_html") or "",
@@ -116,15 +135,10 @@ class ShopifyConfigProduct(models.Model):
         }
 
         if template:
-            current = {
-                "name": template.name or "",
-                "description": template.description or "",
-                "categ_id": template.categ_id.id,
-                "shopify_product_id": template.shopify_product_id or "",
-                "shopify_config_id": template.shopify_config_id.id,
-                "shopify_product_type": template.shopify_product_type or "",
-            }
-            changed_vals = {k: v for k, v in vals.items() if current.get(k) != v}
+            # Only write fields that actually changed to avoid:
+            # - unnecessary write logs (chatter noise)
+            # - triggering computed fields / constraints for no reason
+            changed_vals = _compute_changed_vals(template, vals)
             if changed_vals:
                 template.write(changed_vals)
                 action = "updated"
@@ -134,11 +148,14 @@ class ShopifyConfigProduct(models.Model):
             template = ProductTemplate.create(vals)
             action = "created"
 
+        # image_cache is a dict {url: base64_string} shared across all variants of this product to avoid downloading the same image multiple times.
         image_cache = {}
         self._sync_product_images(
             template, shopify_product.get("images") or [], image_cache
         )
 
+        # Sync each Shopify variant to a product.product record.
+        # If any variant changes, upgrade "skipped" → "updated".
         for variant in shopify_product.get("variants", []):
             variant_changed = self._sync_single_variant(template, variant)
             if variant_changed and action == "skipped":
@@ -149,6 +166,7 @@ class ShopifyConfigProduct(models.Model):
     # ── Variant upsert ────────────────────────────────────────────────────────
 
     def _sync_single_variant(self, template, variant):
+        """Upsert a single Shopify variant into a product.product record."""
         self.ensure_one()
         ProductVariant = self.env["product.product"]
 
@@ -157,22 +175,24 @@ class ShopifyConfigProduct(models.Model):
         barcode = variant.get("barcode") or False
         price = float(variant.get("price") or 0.0)
         inventory_item_id = str(variant.get("inventory_item_id") or "")
+        # inventory_management="shopify" means Shopify tracks stock for this variant.
+        # Map to Odoo's tracking field: "lot" enables stock moves, "none" disables.
         inventory_management = variant.get("inventory_management")
         tracking = "lot" if inventory_management == "shopify" else "none"
 
+        # If Shopify tracks stock, ensure the product is storable in Odoo
         if tracking != "none" and not template.is_storable:
             template.write({"type": "consu", "is_storable": True})
 
         # 1. Exact Shopify variant ID match
         product = ProductVariant.search(
             [("shopify_variant_id", "=", shopify_variant_id)],
-            limit=DEFAULT_VARIANT_SEARCH_LIMIT,
+            limit=1,
         )
         # 2. SKU match within the same store
         if not product and sku:
-            product = ProductVariant.search(
-                [("shopify_config_id", "=", self.id), ("default_code", "=", sku)],
-                limit=DEFAULT_VARIANT_SEARCH_LIMIT,
+            product = self._find_by_shopify_id(
+                "product.product", "default_code", sku
             )
         # 3. Reuse the sole variant on this template
         if not product and len(template.product_variant_ids) == 1:
@@ -184,7 +204,7 @@ class ShopifyConfigProduct(models.Model):
                     ("product_tmpl_id", "=", template.id),
                     ("combination_indices", "=", ""),
                 ],
-                limit=DEFAULT_VARIANT_SEARCH_LIMIT,
+                limit=1,
             )
         # 5. Create new variant
         if not product:
@@ -207,22 +227,10 @@ class ShopifyConfigProduct(models.Model):
             "tracking": tracking,
         }
 
-        current = {
-            "default_code": product.default_code or False,
-            "barcode": product.barcode or False,
-            "shopify_variant_id": product.shopify_variant_id or "",
-            "shopify_inventory_item_id": product.shopify_inventory_item_id or "",
-            "shopify_config_id": product.shopify_config_id.id or False,
-            "active": product.active,
-            "weight": product.weight or 0.0,
-            "tracking": product.tracking,
-        }
-
-        changed = False
-        changed_vals = {k: v for k, v in variant_vals.items() if current.get(k) != v}
+        changed_vals = _compute_changed_vals(product, variant_vals)
+        changed = bool(changed_vals)
         if changed_vals:
             product.write(changed_vals)
-            changed = True
 
         if self._sync_variant_price(template, product, price):
             changed = True
@@ -305,7 +313,7 @@ class ShopifyConfigProduct(models.Model):
             )
             return category or ProductCategory.create({"name": product_type})
         return (
-            self.env.ref("product.product_category_all", raise_if_not_found=False)
-            or ProductCategory.search([], limit=DEFAULT_CATEGORY_SEARCH_LIMIT)
-            or ProductCategory.create({"name": "All"})
+                self.env.ref("product.product_category_all", raise_if_not_found=False)
+                or ProductCategory.search([], limit=DEFAULT_CATEGORY_SEARCH_LIMIT)
+                or ProductCategory.create({"name": "All"})
         )

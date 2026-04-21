@@ -8,6 +8,13 @@ from odoo import _
 from odoo.exceptions import UserError
 from .constants import (
     HTTP_RATE_LIMITED,
+    HTTP_OK,
+    HTTP_CREATED,
+    HTTP_BAD_REQUEST,
+    HTTP_UNAUTHORIZED,
+    HTTP_FORBIDDEN,
+    HTTP_NOT_FOUND,
+    HTTP_INTERNAL_SERVER_ERROR,
     MAX_RATE_LIMIT_RETRIES,
     API_REQUEST_TIMEOUT,
 )
@@ -57,27 +64,43 @@ class ShopifyClient:
                 _logger.exception("Shopify request error: %s", exc)
                 raise UserError(_("Shopify API error: %s") % exc) from exc
 
-            if response.status_code != HTTP_RATE_LIMITED:
-                try:
-                    response.raise_for_status()
-                except Exception as exc:
-                    _logger.exception("Shopify API error: %s", exc)
-                    raise UserError(_("Shopify API error: %s") % exc) from exc
+            if response.status_code == HTTP_RATE_LIMITED:
+                # Rate limited - retry logic (keep existing behavior)
+                attempt += 1
+                if attempt > MAX_RATE_LIMIT_RETRIES:
+                    _logger.error("Shopify rate limit exceeded after %s retries.", MAX_RATE_LIMIT_RETRIES)
+                    raise UserError(_("Shopify rate limit exceeded after %s retries.") % MAX_RATE_LIMIT_RETRIES)
+
+                retry_after = float(response.headers.get("Retry-After", 1))
+                _logger.warning(
+                    "Shopify rate limited (attempt %s/%s). Sleeping %.1f s.",
+                    attempt,
+                    MAX_RATE_LIMIT_RETRIES,
+                    retry_after,
+                )
+                time.sleep(retry_after)
+                continue
+
+            # Success - return response
+            if response.status_code == HTTP_OK or response.status_code == HTTP_CREATED:
                 return response if return_response else response.json()
 
-            attempt += 1
-            if attempt > MAX_RATE_LIMIT_RETRIES:
-                _logger.error("Shopify rate limit exceeded after %s retries.", MAX_RATE_LIMIT_RETRIES)
-                raise UserError(_("Shopify rate limit exceeded after %s retries.") % MAX_RATE_LIMIT_RETRIES)
+            # Handle specific error codes with user-friendly messages
+            error_msg = None
+            if response.status_code == HTTP_BAD_REQUEST:
+                error_msg = "Bad request"
+            elif response.status_code == HTTP_UNAUTHORIZED:
+                error_msg = "Invalid or expired access token"
+            elif response.status_code == HTTP_FORBIDDEN:
+                error_msg = "Access forbidden - check API permissions"
+            elif response.status_code == HTTP_NOT_FOUND:
+                error_msg = "Resource not found"
+            elif response.status_code == HTTP_INTERNAL_SERVER_ERROR:
+                error_msg = "Shopify server error"
 
-            retry_after = float(response.headers.get("Retry-After", 1))
-            _logger.warning(
-                "Shopify rate limited (attempt %s/%s). Sleeping %.1f s.",
-                attempt,
-                MAX_RATE_LIMIT_RETRIES,
-                retry_after,
-            )
-            time.sleep(retry_after)
+            if error_msg:
+                _logger.error("Shopify API error %s: %s", response.status_code, error_msg)
+                raise UserError(_("Shopify API error (%s): %s") % (response.status_code, error_msg))
 
     def get(self, endpoint, params=None):
         return self.request(endpoint, method="GET", params=params)

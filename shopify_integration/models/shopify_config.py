@@ -71,6 +71,25 @@ class ShopifyConfig(models.Model):
             "Content-Type": "application/json",
         }
 
+    def _find_by_shopify_id(self, model_name, shopify_id_field, shopify_id):
+        """Find a record by its Shopify ID within this config.
+
+        Args:
+            model_name: Technical model name (e.g., 'product.template')
+            shopify_id_field: Field name holding the Shopify ID
+            shopify_id: The Shopify ID value to search for
+
+        Returns:
+            The first matching record or empty recordset
+        """
+        return self.env[model_name].search(
+            [
+                (shopify_id_field, "=", shopify_id),
+                ("shopify_config_id", "=", self.id),
+            ],
+            limit=1,
+        )
+
     def action_test_connection(self):
         """Test connection to Shopify store."""
         self.ensure_one()
