@@ -5,7 +5,7 @@ import requests
 
 from odoo import _, models
 
-from .shopify_client import ShopifyClient
+from ..shopify_client import ShopifyClient
 from ..constants import (
     PRODUCT_PAGE_LIMIT,
     IMAGE_DOWNLOAD_TIMEOUT,

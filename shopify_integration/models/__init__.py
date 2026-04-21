@@ -1,5 +1,4 @@
 from . import shopify_config
-from . import shopify_client
 from . import shopify_orchestrator
 from . import shopify_product_sync
 from . import shopify_order_sync

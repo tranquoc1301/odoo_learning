@@ -4,7 +4,7 @@ from urllib.parse import urlparse
 
 from odoo import _, api, fields, models
 from odoo.exceptions import ValidationError
-from .shopify_client import ShopifyClient
+from ..shopify_client import ShopifyClient
 from ..constants import SHOPIFY_API_VERSION
 
 _logger = logging.getLogger(__name__)

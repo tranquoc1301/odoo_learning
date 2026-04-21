@@ -4,7 +4,7 @@ from odoo import _, models
 from odoo.exceptions import UserError
 from odoo.tools.float_utils import float_compare
 
-from .shopify_client import ShopifyClient
+from ..shopify_client import ShopifyClient
 from ..constants import INVENTORY_BATCH_SIZE
 
 _logger = logging.getLogger(__name__)

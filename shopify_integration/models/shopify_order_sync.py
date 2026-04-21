@@ -3,7 +3,7 @@ from datetime import datetime
 
 from odoo import _, fields, models
 
-from .shopify_client import ShopifyClient
+from ..shopify_client import ShopifyClient
 from ..constants import (
     ORDER_PAGE_LIMIT,
     DEFAULT_VARIANT_SEARCH_LIMIT,
