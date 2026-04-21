@@ -15,6 +15,7 @@ class SyncLog(models.Model):
     )
     sync_type = fields.Selection(
         [
+            ("connection", "Connection"),
             ("product", "Product"),
             ("order", "Order"),
             ("inventory", "Inventory"),

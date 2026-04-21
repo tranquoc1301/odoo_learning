@@ -3,7 +3,7 @@ import re
 from urllib.parse import urlparse
 
 from odoo import _, api, fields, models
-from odoo.exceptions import ValidationError
+from odoo.exceptions import ValidationError, UserError
 from ..shopify_client import ShopifyClient
 from ..constants import SHOPIFY_API_VERSION
 
@@ -79,7 +79,7 @@ class ShopifyConfig(models.Model):
             shop_name = client.test_connection()
             self.env["sync.log"].create_from_config(
                 self,
-                sync_type="product",
+                sync_type="connection",
                 status="success",
                 message=_("Connection successful: %s") % shop_name,
             )
@@ -93,10 +93,10 @@ class ShopifyConfig(models.Model):
                     "sticky": False,
                 },
             }
-        except Exception as exc:
+        except UserError as exc:
             self.env["sync.log"].create_from_config(
                 self,
-                sync_type="product",
+                sync_type="connection",
                 status="failed",
                 message=_("Connection failed: %s") % exc,
             )
