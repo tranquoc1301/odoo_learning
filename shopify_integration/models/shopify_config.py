@@ -1,131 +1,62 @@
-import logging
-import re
-from urllib.parse import urlparse
-
 from odoo import _, api, fields, models
-from odoo.exceptions import ValidationError, UserError
-from ..shopify_client import ShopifyClient
-from ..constants import SHOPIFY_API_VERSION
+from odoo.exceptions import ValidationError
 
-_logger = logging.getLogger(__name__)
+from .shopify_client import ShopifyClient
+
+from ..constants import (
+    SYNC_TYPE_CONNECTION,
+    STATUS_SUCCESS,
+    STATUS_PARTIAL,
+    STATUS_FAILED,
+)
 
 
 class ShopifyConfig(models.Model):
-    """Shopify store configuration."""
-
     _name = "shopify.config"
     _description = "Shopify Configuration"
+    _inherit = "shopify.client"
     _rec_name = "name"
 
     name = fields.Char(string="Name", required=True)
-    shop_url = fields.Char(
-        string="Shop URL",
+    shop_url = fields.Char(string="Shop URL", required=True)
+    api_access_token = fields.Char(
+        string="Access Token",
         required=True,
-        help="Example: your-store.myshopify.com",
+        password=True,
     )
-    api_access_token = fields.Char(string="Access Token", required=True)
-    warehouse_id = fields.Many2one(
-        "stock.warehouse",
-        string="Warehouse",
-        required=True,
-    )
-    last_sync = fields.Datetime(
-        string="Last Successful Sync",
-        copy=False,
-        readonly=True,
-    )
+    warehouse_id = fields.Many2one("stock.warehouse", string="Warehouse", required=True)
+    last_sync = fields.Datetime(string="Last Successfully Sync", copy=False, readonly=True)
     active = fields.Boolean(default=True)
-    sync_log_ids = fields.One2many(
-        "sync.log",
-        "config_id",
-        string="Sync Logs",
-    )
+    api_version = fields.Char(string="API Version", copy=False, readonly=True)
+    sync_log_ids = fields.One2many("sync.log", "config_id", string="Sync Logs")
 
     @api.constrains("shop_url")
     def _check_shop_url(self):
         for record in self:
             hostname = record._normalize_shop_url(record.shop_url)
             if not hostname or "." not in hostname:
-                raise ValidationError(_("Shop URL is not valid."))
-
-    def _normalize_shop_url(self, value):
-        """Return a clean hostname string from a raw URL or bare domain input."""
-        value = (value or "").strip()
-        if not value:
-            return ""
-        if not value.startswith(("http://", "https://")):
-            value = f"https://{value}"
-        parsed = urlparse(value)
-        return (parsed.netloc or parsed.path or "").strip().strip("/")
-
-    def _get_base_url(self):
-        self.ensure_one()
-        hostname = self._normalize_shop_url(self.shop_url)
-        return f"https://{hostname}/admin/api/{SHOPIFY_API_VERSION}"
-
-    def _get_headers(self):
-        self.ensure_one()
-        return {
-            "X-Shopify-Access-Token": self.api_access_token,
-            "Accept": "application/json",
-            "Content-Type": "application/json",
-        }
-
-    def _find_by_shopify_id(self, model_name, shopify_id_field, shopify_id):
-        """Find a record by its Shopify ID within this config.
-
-        Args:
-            model_name: Technical model name (e.g., 'product.template')
-            shopify_id_field: Field name holding the Shopify ID
-            shopify_id: The Shopify ID value to search for
-
-        Returns:
-            The first matching record or empty recordset
-        """
-        return self.env[model_name].search(
-            [
-                (shopify_id_field, "=", shopify_id),
-                ("shopify_config_id", "=", self.id),
-            ],
-            limit=1,
-        )
+                raise ValidationError(_("Invalid shop URL."))
 
     def action_test_connection(self):
-        """Test connection to Shopify store."""
         self.ensure_one()
-        client = ShopifyClient(self)
         try:
-            shop_name = client.test_connection()
+            shop_name = self._test_connection()
             self.env["sync.log"].create_from_config(
-                self,
-                sync_type="connection",
-                status="success",
-                message=_("Connection successful: %s") % shop_name,
+                self, sync_type=SYNC_TYPE_CONNECTION, status=STATUS_SUCCESS,
+                message=_("Connected: %s") % shop_name,
+            )
+        except Exception as exc:
+            self.env["sync.log"].create_from_config(
+                self, sync_type=SYNC_TYPE_CONNECTION, status=STATUS_FAILED,
+                message=_("Failed: %s") % exc,
             )
             return {
                 "type": "ir.actions.client",
                 "tag": "display_notification",
-                "params": {
-                    "title": _("Success"),
-                    "message": _("Connected: %s") % shop_name,
-                    "type": "success",
-                    "sticky": False,
-                },
+                "params": {"title": _("Error"), "message": str(exc), "type": "danger", "sticky": True},
             }
-        except UserError as exc:
-            self.env["sync.log"].create_from_config(
-                self,
-                sync_type="connection",
-                status="failed",
-                message=_("Connection failed: %s") % exc,
-            )
-            return {
-                "type": "ir.actions.client",
-                "tag": "display_notification",
-                "params": {
-                    "title": _("Error"),
-                    "message": str(exc),
-                    "type": "danger",
-                    "sticky": True,
-                },
-            }
+        return {
+            "type": "ir.actions.client",
+            "tag": "display_notification",
+            "params": {"title": _("Success"), "message": _("Connected: %s") % shop_name, "type": "success"},
+        }

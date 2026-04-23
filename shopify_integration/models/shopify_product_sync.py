@@ -4,26 +4,22 @@ import logging
 import requests
 
 from odoo import _, models
-
-from ..shopify_client import ShopifyClient
 from ..constants import (
     PRODUCT_PAGE_LIMIT,
     IMAGE_DOWNLOAD_TIMEOUT,
     DEFAULT_IMAGE_POSITION,
     DEFAULT_VARIANT_SEARCH_LIMIT,
     DEFAULT_CATEGORY_SEARCH_LIMIT,
+    SYNC_TYPE_PRODUCT,
+    STATUS_SUCCESS,
+    STATUS_PARTIAL,
+    STATUS_FAILED,
 )
 
 _logger = logging.getLogger(__name__)
 
 
 def _compute_changed_vals(record, new_vals):
-    """Return dict of fields that actually changed vs current DB values.
-
-    Builds a snapshot of current DB values and compares with new_vals.
-    Only returns fields that differ — avoids unnecessary write logs
-    and triggering computed fields for no reason.
-    """
     current = {}
     for key in new_vals:
         value = getattr(record, key, False)
@@ -68,8 +64,7 @@ class ShopifyConfigProduct(models.Model):
     def sync_products(self):
         self.ensure_one()
 
-        client = ShopifyClient(self)
-        products = client.get_all(
+        products = self._get_all(
             "products.json",
             params={"limit": PRODUCT_PAGE_LIMIT},
             key="products",
@@ -94,15 +89,15 @@ class ShopifyConfigProduct(models.Model):
                     exc_info=True,
                 )
 
-        status = "success" if not errors else "partial"
+        status = STATUS_SUCCESS if not errors else STATUS_PARTIAL
         self.env["sync.log"].create_from_config(
             self,
-            sync_type="product",
+            sync_type=SYNC_TYPE_PRODUCT,
             status=status,
             message=_(
                 "Products synced. Created: %(created)s, Updated: %(updated)s, Errors: %(errors)s"
             )
-                    % {"created": created, "updated": updated, "errors": errors},
+            % {"created": created, "updated": updated, "errors": errors},
         )
         return {"created": created, "updated": updated, "errors": errors}
 
@@ -135,9 +130,6 @@ class ShopifyConfigProduct(models.Model):
         }
 
         if template:
-            # Only write fields that actually changed to avoid:
-            # - unnecessary write logs (chatter noise)
-            # - triggering computed fields / constraints for no reason
             changed_vals = _compute_changed_vals(template, vals)
             if changed_vals:
                 template.write(changed_vals)
@@ -238,21 +230,18 @@ class ShopifyConfigProduct(models.Model):
         return changed
 
     def _sync_variant_price(self, template, product, price):
-        self.ensure_one()
         if len(template.product_variant_ids) == 1:
             if template.list_price != price:
                 template.write({"list_price": price})
                 return True
-        else:
-            if product.lst_price != price:
-                product.write({"lst_price": price})
-                return True
+        elif product.lst_price != price:
+            product.write({"lst_price": price})
+            return True
         return False
 
     # ── Image sync ────────────────────────────────────────────────────────────
 
     def _sync_product_images(self, template, images, image_cache=None):
-        self.ensure_one()
         if not images:
             return
 
@@ -304,8 +293,7 @@ class ShopifyConfigProduct(models.Model):
     # ── Category helper ───────────────────────────────────────────────────────
 
     def _get_or_create_category(self, product_type):
-        self.ensure_one()
-        ProductCategory = self.env["product.category"].sudo()
+        ProductCategory = self.env["product.category"]
         if product_type:
             category = ProductCategory.search(
                 [("name", "=", product_type)],

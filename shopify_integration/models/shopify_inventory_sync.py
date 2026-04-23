@@ -4,8 +4,7 @@ from odoo import _, models
 from odoo.exceptions import UserError
 from odoo.tools.float_utils import float_compare
 
-from ..shopify_client import ShopifyClient
-from ..constants import INVENTORY_BATCH_SIZE
+from ..constants import INVENTORY_BATCH_SIZE, SYNC_TYPE_INVENTORY, STATUS_SUCCESS, STATUS_PARTIAL, STATUS_FAILED
 
 _logger = logging.getLogger(__name__)
 
@@ -34,8 +33,8 @@ class ShopifyConfigInventory(models.Model):
         if not variants:
             self.env["sync.log"].create_from_config(
                 self,
-                sync_type="inventory",
-                status="partial",
+                sync_type=SYNC_TYPE_INVENTORY,
+                status=STATUS_PARTIAL,
                 message=_("No mapped variants found. Run a Product sync first."),
             )
             return {"created": 0, "updated": 0, "errors": 1}
@@ -44,8 +43,8 @@ class ShopifyConfigInventory(models.Model):
         if not location:
             self.env["sync.log"].create_from_config(
                 self,
-                sync_type="inventory",
-                status="failed",
+                sync_type=SYNC_TYPE_INVENTORY,
+                status=STATUS_FAILED,
                 message=_("Warehouse '%s' has no stock location configured.")
                 % self.warehouse_id.name,
             )
@@ -58,10 +57,9 @@ class ShopifyConfigInventory(models.Model):
         errors = 0
 
         for i in range(0, len(item_ids), _BATCH_SIZE):
-            batch_ids = item_ids[i : i + _BATCH_SIZE]
-            client = ShopifyClient(self)
+            batch_ids = item_ids[i: i + _BATCH_SIZE]
             try:
-                data = client.get(
+                data = self._get(
                     "inventory_levels.json",
                     params={"inventory_item_ids": ",".join(batch_ids)},
                 )
@@ -93,10 +91,10 @@ class ShopifyConfigInventory(models.Model):
                     )
                     errors += 1
 
-        status = "success" if not errors else ("partial" if updated else "failed")
+        status = STATUS_SUCCESS if not errors else (STATUS_PARTIAL if updated else STATUS_FAILED)
         self.env["sync.log"].create_from_config(
             self,
-            sync_type="inventory",
+            sync_type=SYNC_TYPE_INVENTORY,
             status=status,
             message=_(
                 "Inventory sync completed. Updated: %(updated)s, Errors: %(errors)s"
@@ -106,12 +104,7 @@ class ShopifyConfigInventory(models.Model):
         return {"created": 0, "updated": updated, "errors": errors}
 
     def _apply_qty(self, product, location, qty):
-        """Set the on-hand quantity of *product* at *location* to exactly *qty*.
-
-        Returns True if quantity actually changed, False if already correct
-        (avoids unnecessary stock moves and incorrect updated counter).
-        """
-        StockQuant = self.env["stock.quant"].sudo()
+        StockQuant = self.env["stock.quant"]
         quant = StockQuant.search(
             [
                 ("product_id", "=", product.id),

@@ -1,5 +1,15 @@
 from odoo import fields, models
 
+from ..constants import (
+    SYNC_TYPE_CONNECTION,
+    SYNC_TYPE_PRODUCT,
+    SYNC_TYPE_ORDER,
+    SYNC_TYPE_INVENTORY,
+    STATUS_SUCCESS,
+    STATUS_PARTIAL,
+    STATUS_FAILED,
+)
+
 
 class SyncLog(models.Model):
     _name = "sync.log"
@@ -15,10 +25,10 @@ class SyncLog(models.Model):
     )
     sync_type = fields.Selection(
         [
-            ("connection", "Connection"),
-            ("product", "Product"),
-            ("order", "Order"),
-            ("inventory", "Inventory"),
+            (SYNC_TYPE_CONNECTION, "Connection"),
+            (SYNC_TYPE_PRODUCT, "Product"),
+            (SYNC_TYPE_ORDER, "Order"),
+            (SYNC_TYPE_INVENTORY, "Inventory"),
         ],
         string="Sync Type",
         required=True,
@@ -26,9 +36,9 @@ class SyncLog(models.Model):
     )
     status = fields.Selection(
         [
-            ("success", "Success"),
-            ("partial", "Partial"),
-            ("failed", "Failed"),
+            (STATUS_SUCCESS, "Success"),
+            (STATUS_PARTIAL, "Partial"),
+            (STATUS_FAILED, "Failed"),
         ],
         string="Status",
         required=True,
@@ -54,7 +64,7 @@ class SyncLog(models.Model):
         self, config, sync_type, status, message, shopify_id=None, external_ref=None
     ):
         """Create a sync log entry for the given config."""
-        return self.sudo().create(
+        return self.create(
             {
                 "config_id": config.id,
                 "sync_type": sync_type,

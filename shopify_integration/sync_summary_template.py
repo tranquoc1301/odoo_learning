@@ -1,5 +1,11 @@
 from odoo import _
 
+from .constants import (
+    SYNC_TYPE_PRODUCT,
+    SYNC_TYPE_INVENTORY,
+    SYNC_TYPE_ORDER,
+)
+
 _BLUE = "#0d6efd"
 _ORANGE = "#fd7e14"
 _GREEN = "#198754"
@@ -62,19 +68,19 @@ _TOTALS = "display:flex;gap:16px"
 _TOTAL_ITEM = f"display:inline-flex;align-items:center;gap:5px;font-size:12px;color:{_GREY}"
 
 _ROW_META = {
-    "products": {
+    SYNC_TYPE_PRODUCT: {
         "label_key": "Products",
         "icon_bg": "#dbeafe",
         "fa_cls": "fa-tag",
         "fa_color": _BLUE,
     },
-    "inventory": {
+    SYNC_TYPE_INVENTORY: {
         "label_key": "Inventory",
         "icon_bg": "#fff3cd",
         "fa_cls": "fa-cubes",
         "fa_color": _ORANGE,
     },
-    "orders": {
+    SYNC_TYPE_ORDER: {
         "label_key": "Orders",
         "icon_bg": "#d1e7dd",
         "fa_cls": "fa-shopping-cart",
@@ -130,7 +136,7 @@ def build_sync_summary_html(result_map):
     rows_html = ""
     is_even = True
 
-    for key in ("products", "inventory", "orders"):
+    for key in (SYNC_TYPE_PRODUCT, SYNC_TYPE_INVENTORY, SYNC_TYPE_ORDER):
         res = result_map.get(key)
         if not isinstance(res, dict):
             continue

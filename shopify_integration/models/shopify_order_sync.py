@@ -3,13 +3,16 @@ from datetime import datetime
 
 from odoo import _, fields, models
 
-from ..shopify_client import ShopifyClient
 from ..constants import (
     ORDER_PAGE_LIMIT,
     DEFAULT_VARIANT_SEARCH_LIMIT,
     DEFAULT_PARTNER_SEARCH_LIMIT,
     DEFAULT_COUNTRY_SEARCH_LIMIT,
     DEFAULT_STATE_SEARCH_LIMIT,
+    SYNC_TYPE_ORDER,
+    STATUS_SUCCESS,
+    STATUS_PARTIAL,
+    STATUS_FAILED,
 )
 
 _logger = logging.getLogger(__name__)
@@ -39,8 +42,7 @@ class ShopifyConfigOrder(models.Model):
         if date_to:
             params["created_at_max"] = date_to.strftime("%Y-%m-%dT%H:%M:%SZ")
 
-        client = ShopifyClient(self)
-        orders = client.get_all(
+        orders = self._get_all(
             "orders.json",
             params=params,
             key="orders",
@@ -60,11 +62,11 @@ class ShopifyConfigOrder(models.Model):
                 partial += 1
 
         self.last_sync = fields.Datetime.now()
-
+        status = STATUS_SUCCESS if not partial else STATUS_PARTIAL
         self.env["sync.log"].create_from_config(
             self,
-            sync_type="order",
-            status="success" if not partial else "partial",
+            sync_type=SYNC_TYPE_ORDER,
+            status=status,
             message=_(
                 "Orders synced. Created: %(created)s, Skipped: %(skipped)s, Partial: %(partial)s"
             )
@@ -117,8 +119,8 @@ class ShopifyConfigOrder(models.Model):
             if not product:
                 self.env["sync.log"].create_from_config(
                     self,
-                    sync_type="order",
-                    status="partial",
+                    sync_type=SYNC_TYPE_ORDER,
+                    status=STATUS_PARTIAL,
                     message=_("Missing SKU while importing order: %s") % (sku or "-"),
                     shopify_id=str(item.get("id") or ""),
                     external_ref=shopify_order.get("name"),
@@ -142,13 +144,13 @@ class ShopifyConfigOrder(models.Model):
         if not lines:
             self.env["sync.log"].create_from_config(
                 self,
-                sync_type="order",
-                status="failed",
+                sync_type=SYNC_TYPE_ORDER,
+                status=STATUS_FAILED,
                 message=_("Order %s skipped because no valid order lines were found.")
                 % (shopify_order.get("name") or shopify_order_id),
                 shopify_id=shopify_order_id,
             )
-            return "partial"
+            return STATUS_PARTIAL
 
         order = SaleOrder.create(
             {
@@ -190,7 +192,6 @@ class ShopifyConfigOrder(models.Model):
 
     def _get_or_create_customer(self, shopify_order):
         """Return the billing res.partner for this order, creating one if needed."""
-        self.ensure_one()
         Partner = self.env["res.partner"]
 
         customer_data = shopify_order.get("customer") or {}
@@ -229,8 +230,6 @@ class ShopifyConfigOrder(models.Model):
 
     def _get_or_create_delivery_partner(self, partner, shopify_order):
         """Return the delivery res.partner (child of *partner*) for this order."""
-
-        self.ensure_one()
         Partner = self.env["res.partner"]
         shipping = shopify_order.get("shipping_address") or {}
 

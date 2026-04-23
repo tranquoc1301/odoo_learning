@@ -1,7 +1,12 @@
 from odoo import _, api, fields, models
 from odoo.exceptions import UserError
 
-from ..utils import build_sync_summary_html
+from ..constants import (
+    SYNC_TYPE_PRODUCT,
+    SYNC_TYPE_ORDER,
+    SYNC_TYPE_INVENTORY,
+)
+from ..sync_summary_template import build_sync_summary_html
 
 
 class ShopifySyncWizard(models.TransientModel):
@@ -26,9 +31,9 @@ class ShopifySyncWizard(models.TransientModel):
     )
     sync_type = fields.Selection(
         [
-            ("products", "Products"),
-            ("orders", "Orders"),
-            ("inventory", "Inventory"),
+            (SYNC_TYPE_PRODUCT, "Products"),
+            (SYNC_TYPE_ORDER, "Orders"),
+            (SYNC_TYPE_INVENTORY, "Inventory"),
             ("all", "All"),
         ],
         string="Sync Type",
@@ -99,28 +104,28 @@ class ShopifySyncWizard(models.TransientModel):
         self.ensure_one()
         config = self.config_id
 
-        if self.sync_type == "products":
+        if self.sync_type == SYNC_TYPE_PRODUCT:
             return {
-                "products": config.sync_products(),
+                SYNC_TYPE_PRODUCT: config.sync_products(),
             }
 
-        if self.sync_type == "orders":
+        if self.sync_type == SYNC_TYPE_ORDER:
             return {
-                "orders": config.sync_orders(
+                SYNC_TYPE_ORDER: config.sync_orders(
                     date_from=self.date_from,
                     date_to=self.date_to,
                 ),
             }
 
-        if self.sync_type == "inventory":
+        if self.sync_type == SYNC_TYPE_INVENTORY:
             return {
-                "inventory": config.sync_inventory(),
+                SYNC_TYPE_INVENTORY: config.sync_inventory(),
             }
 
         return {
-            "products": config.sync_products(),
-            "inventory": config.sync_inventory(),
-            "orders": config.sync_orders(
+            SYNC_TYPE_PRODUCT: config.sync_products(),
+            SYNC_TYPE_INVENTORY: config.sync_inventory(),
+            SYNC_TYPE_ORDER: config.sync_orders(
                 date_from=self.date_from,
                 date_to=self.date_to,
             ),
